@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, type MouseEvent } from "react";
+import { useImmer } from "use-immer";
 import spritesheet from "../assets/project.png";
 
 const TILE_WIDTH = 32;
@@ -22,7 +23,7 @@ export function MapEditor() {
 	const [zoomMap, setZoomMap] = useState(1);
 	const [zoomPalette, setZoomPalette] = useState(1);
 	const [paletteSelection, setPaletteSelection] = useState<SelectionRect>({ x: 0, y: 0, w: 1, h: 1 });
-	const [layers, setLayers] = useState<Layer[]>([
+	const [layers, setLayers] = useImmer<Layer[]>([
 		{ id: "ground", name: "Ground", visible: true, opacity: 1, data: {} },
 		{ id: "decor", name: "Decoration", visible: true, opacity: 1, data: {} },
 		{ id: "collision", name: "Collision", visible: true, opacity: 0.5, data: {} },
@@ -44,7 +45,7 @@ export function MapEditor() {
 	const historyFuture = useRef<Layer[][]>([]);
 
 	function saveCheckpoint() {
-		historyPast.current.push(JSON.parse(JSON.stringify(layers)));
+		historyPast.current.push(layers); // Immer state is already an immutable snapshot
 		if (historyPast.current.length > 50) historyPast.current.shift(); // Limit history
 		historyFuture.current = []; // Clear redo stack on new action
 	}
@@ -54,7 +55,7 @@ export function MapEditor() {
 
 		const previous = historyPast.current.pop();
 		if (previous) {
-			historyFuture.current.push(JSON.parse(JSON.stringify(layers)));
+			historyFuture.current.push(layers);
 			setLayers(previous);
 		}
 	}
@@ -64,7 +65,7 @@ export function MapEditor() {
 
 		const next = historyFuture.current.pop();
 		if (next) {
-			historyPast.current.push(JSON.parse(JSON.stringify(layers)));
+			historyPast.current.push(layers);
 			setLayers(next);
 		}
 	}
@@ -298,17 +299,13 @@ export function MapEditor() {
 			if (e.key === "Delete" || e.key === "Backspace") {
 				if (selection) {
 					saveCheckpoint();
-					setLayers((prev) => {
-						const next = [...prev];
-						const active = { ...next[activeLayerIndex], data: { ...next[activeLayerIndex].data } };
-
+					setLayers((draft) => {
+						const activeData = draft[activeLayerIndex].data;
 						for (let x = selection.x; x < selection.x + selection.w; x++) {
 							for (let y = selection.y; y < selection.y + selection.h; y++) {
-								delete active.data[`${x},${y}`];
+								delete activeData[`${x},${y}`];
 							}
 						}
-						next[activeLayerIndex] = active;
-						return next;
 					});
 				}
 			}
@@ -346,19 +343,14 @@ export function MapEditor() {
 					const targetX = selection ? selection.x : 0;
 					const targetY = selection ? selection.y : 0;
 
-					setLayers((prev) => {
-						const next = [...prev];
-						const active = { ...next[activeLayerIndex], data: { ...next[activeLayerIndex].data } };
-
+					setLayers((draft) => {
+						const activeData = draft[activeLayerIndex].data;
 						Object.entries(clipboard).forEach(([key, tileData]) => {
 							const [gx, gy] = key.split(",").map(Number);
 							const finalX = targetX + gx;
 							const finalY = targetY + gy;
-							active.data[`${finalX},${finalY}`] = { ...tileData };
+							activeData[`${finalX},${finalY}`] = { ...tileData };
 						});
-
-						next[activeLayerIndex] = active;
-						return next;
 					});
 				}
 			}
@@ -398,65 +390,51 @@ export function MapEditor() {
 		const gy = Math.floor(gridY / TILE_HEIGHT);
 		const key = `${gx},${gy}`;
 
-		setLayers((prev) => {
-			const next = [...prev];
-			// Ensure we deep copy the active layer's data to avoid mutability issues
-			const active = { ...next[activeLayerIndex], data: { ...next[activeLayerIndex].data } };
-
+		setLayers((draft) => {
+			const activeData = draft[activeLayerIndex].data;
 			if (tileId === null) {
-				delete active.data[key];
+				delete activeData[key];
 			} else {
-				active.data[key] = { tileId, flipX: false };
+				activeData[key] = { tileId, flipX: false };
 			}
-
-			next[activeLayerIndex] = active;
-			return next;
 		});
 	}
 
 	function floodFill(startGridX: number, startGridY: number, fillTileId: number) {
-		// startGridX/Y are passed as INDICES (e.g. 1, 2)
 		const startKey = `${startGridX},${startGridY}`;
-		const activeData = layers[activeLayerIndex].data;
+		setLayers((draft) => {
+			const activeData = draft[activeLayerIndex].data;
+			const startTileId = activeData[startKey]?.tileId;
 
-		const startTileId = activeData[startKey]?.tileId;
+			// Prevent infinite recursion if filling same color
+			if (startTileId === fillTileId) return;
 
-		// Prevent infinite recursion if filling same color
-		if (startTileId === fillTileId) return;
+			const visited = new Set<string>();
+			const queue = [[startGridX, startGridY]];
 
-		const visited = new Set<string>();
-		const queue = [[startGridX, startGridY]];
+			// Helper to get ID (undefined if empty)
+			const getId = (x: number, y: number) => activeData[`${x},${y}`]?.tileId;
 
-		// We'll calculate the new data object based on current active layer
-		const newData = { ...activeData };
+			while (queue.length > 0) {
+				const [cx, cy] = queue.pop()!;
+				const key = `${cx},${cy}`;
 
-		// Helper to get ID (undefined if empty)
-		const getId = (x: number, y: number) => newData[`${x},${y}`]?.tileId;
+				if (visited.has(key)) continue;
+				if (cx < 0 || cx >= mapSize.width || cy < 0 || cy >= mapSize.height) continue;
 
-		while (queue.length > 0) {
-			const [cx, cy] = queue.pop()!;
-			const key = `${cx},${cy}`;
+				const currentId = getId(cx, cy);
+				// Match if IDs are equal (including both undefined)
+				if (currentId !== startTileId) continue;
 
-			if (visited.has(key)) continue;
-			if (cx < 0 || cx >= mapSize.width || cy < 0 || cy >= mapSize.height) continue;
+				visited.add(key);
+				// Mutation!
+				activeData[key] = { tileId: fillTileId, flipX: false };
 
-			const currentId = getId(cx, cy);
-			// Match if IDs are equal (including both undefined)
-			if (currentId !== startTileId) continue;
-
-			visited.add(key);
-			newData[key] = { tileId: fillTileId, flipX: false };
-
-			queue.push([cx + 1, cy]);
-			queue.push([cx - 1, cy]);
-			queue.push([cx, cy + 1]);
-			queue.push([cx, cy - 1]);
-		}
-
-		setLayers((prev) => {
-			const next = [...prev];
-			next[activeLayerIndex] = { ...next[activeLayerIndex], data: newData };
-			return next;
+				queue.push([cx + 1, cy]);
+				queue.push([cx - 1, cy]);
+				queue.push([cx, cy + 1]);
+				queue.push([cx, cy - 1]);
+			}
 		});
 	}
 
@@ -755,10 +733,8 @@ export function MapEditor() {
 					setLayers(json);
 				} else if (typeof json === "object" && json !== null) {
 					// V1: Legacy single grid -> Load into Ground
-					setLayers(prev => {
-						const next = [...prev];
-						next[0] = { ...next[0], data: json };
-						return next;
+					setLayers(draft => {
+						draft[0].data = json;
 					});
 				} else {
 					alert("Invalid JSON format");
@@ -940,7 +916,7 @@ export function MapEditor() {
 				{/* Resizer */}
 				<div
 					className="w-1 cursor-col-resize h-full hover:bg-blue-400 bg-gray-200 flex-none transition-colors"
-					onMouseDown={(e) => {
+					onMouseDown={() => {
 						isResizing.current = true;
 						document.body.style.cursor = "col-resize";
 					}}
@@ -982,10 +958,8 @@ export function MapEditor() {
 										className="mr-2 text-gray-500 hover:text-black"
 										onClick={(e) => {
 											e.stopPropagation();
-											setLayers(prev => {
-												const next = [...prev];
-												next[index] = { ...next[index], visible: !next[index].visible };
-												return next;
+											setLayers(draft => {
+												draft[index].visible = !draft[index].visible;
 											});
 										}}
 									>

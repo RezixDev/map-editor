@@ -22,6 +22,7 @@ export function MapEditor() {
 	const [paletteWidth, setPaletteWidth] = useState(280);
 	const [zoomMap, setZoomMap] = useState(1);
 	const [zoomPalette, setZoomPalette] = useState(1);
+	const [isFlipped, setIsFlipped] = useState(false);
 	const [paletteSelection, setPaletteSelection] = useState<SelectionRect>({ x: 0, y: 0, w: 1, h: 1 });
 	const [layers, setLayers] = useImmer<Layer[]>([
 		{ id: "ground", name: "Ground", visible: true, opacity: 1, data: {} },
@@ -166,17 +167,17 @@ export function MapEditor() {
 				const srcX = (tileData.tileId % tilesPerRow) * TILE_WIDTH;
 				const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
 
-				context.drawImage(
-					image,
-					srcX,
-					srcY,
-					TILE_WIDTH,
-					TILE_HEIGHT,
-					drawX,
-					drawY,
-					TILE_WIDTH,
-					TILE_HEIGHT
-				);
+				context.save();
+				if (tileData.flipX) {
+					// 2. Move to the right edge of the tile and flip the X-axis
+					context.translate(drawX + TILE_WIDTH, drawY);
+					context.scale(-1, 1);
+					// 3. Draw at 0,0 because the context is already moved
+					context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
+				} else {
+					context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, drawX, drawY, TILE_WIDTH, TILE_HEIGHT);
+				}
+				context.restore();
 			});
 
 			context.restore();
@@ -270,6 +271,7 @@ export function MapEditor() {
 			if (e.key.toLowerCase() === "b") setCurrentTool("brush");
 			if (e.key.toLowerCase() === "e") setCurrentTool("eraser");
 			if (e.key.toLowerCase() === "g" || e.key.toLowerCase() === "f") setCurrentTool("fill");
+			if (e.key.toLowerCase() === "x") setIsFlipped(prev => !prev);
 
 			// Palette Navigation (Arrow Keys)
 			if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
@@ -345,11 +347,30 @@ export function MapEditor() {
 
 					setLayers((draft) => {
 						const activeData = draft[activeLayerIndex].data;
+
+						// Calculate clipboard width for mirroring
+						let maxClipboardX = 0;
+						if (isFlipped) {
+							Object.keys(clipboard).forEach(key => {
+								const [gx] = key.split(",").map(Number);
+								if (gx > maxClipboardX) maxClipboardX = gx;
+							});
+						}
+
 						Object.entries(clipboard).forEach(([key, tileData]) => {
 							const [gx, gy] = key.split(",").map(Number);
-							const finalX = targetX + gx;
+
+							let finalGx = gx;
+							let finalTileData = { ...tileData };
+
+							if (isFlipped) {
+								finalGx = maxClipboardX - gx;
+								finalTileData.flipX = !finalTileData.flipX;
+							}
+
+							const finalX = targetX + finalGx;
 							const finalY = targetY + gy;
-							activeData[`${finalX},${finalY}`] = { ...tileData };
+							activeData[`${finalX},${finalY}`] = finalTileData;
 						});
 					});
 				}
@@ -395,7 +416,7 @@ export function MapEditor() {
 			if (tileId === null) {
 				delete activeData[key];
 			} else {
-				activeData[key] = { tileId, flipX: false };
+				activeData[key] = { tileId, flipX: isFlipped };
 			}
 		});
 	}
@@ -428,7 +449,7 @@ export function MapEditor() {
 
 				visited.add(key);
 				// Mutation!
-				activeData[key] = { tileId: fillTileId, flipX: false };
+				activeData[key] = { tileId: fillTileId, flipX: isFlipped };
 
 				queue.push([cx + 1, cy]);
 				queue.push([cx - 1, cy]);
@@ -543,22 +564,21 @@ export function MapEditor() {
 
 				for (let dy = 0; dy < previewH; dy++) {
 					for (let dx = 0; dx < previewW; dx++) {
-						const srcX = (paletteSelection.x + dx) * TILE_WIDTH;
+						const srcDx = isFlipped ? (previewW - 1 - dx) : dx;
+						const srcX = (paletteSelection.x + srcDx) * TILE_WIDTH;
 						const srcY = (paletteSelection.y + dy) * TILE_HEIGHT;
 						const destX = gridX + (dx * TILE_WIDTH);
 						const destY = gridY + (dy * TILE_HEIGHT);
 
-						context.drawImage(
-							image,
-							srcX,
-							srcY,
-							TILE_WIDTH,
-							TILE_HEIGHT,
-							destX,
-							destY,
-							TILE_WIDTH,
-							TILE_HEIGHT
-						);
+						context.save();
+						if (isFlipped) {
+							context.translate(destX + TILE_WIDTH, destY);
+							context.scale(-1, 1);
+							context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
+						} else {
+							context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, destX, destY, TILE_WIDTH, TILE_HEIGHT);
+						}
+						context.restore();
 					}
 				}
 				context.globalAlpha = 1.0;
@@ -633,7 +653,8 @@ export function MapEditor() {
 			// Multi-tile painting (stamp)
 			for (let dy = 0; dy < paletteSelection.h; dy++) {
 				for (let dx = 0; dx < paletteSelection.w; dx++) {
-					const px = paletteSelection.x + dx;
+					const srcDx = isFlipped ? (paletteSelection.w - 1 - dx) : dx;
+					const px = paletteSelection.x + srcDx;
 					const py = paletteSelection.y + dy;
 					const tileId = py * tilesPerRow + px;
 
@@ -909,7 +930,10 @@ export function MapEditor() {
 					</div>
 					<div className="mt-2 text-sm text-gray-500">
 						Drag to select multiple tiles.<br />
-						Shortcuts: B (Brush), E (Eraser), F (Fill)
+						Shortcuts: B (Brush), E (Eraser), F (Fill), X (Flip)
+					</div>
+					<div className={`mt-2 p-1 text-xs text-center border rounded ${isFlipped ? "bg-blue-100 border-blue-500 font-bold" : "bg-gray-100 text-gray-400"}`}>
+						Flip X: {isFlipped ? "ON" : "OFF"}
 					</div>
 				</div>
 

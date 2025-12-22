@@ -79,18 +79,14 @@ export function MapEditor() {
 		const logicalWidth = image.width;
 		const logicalHeight = image.height;
 
-		const displayWidth = logicalWidth * zoomPalette;
-		const displayHeight = logicalHeight * zoomPalette;
-
-		if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-			canvas.width = displayWidth;
-			canvas.height = displayHeight;
+		if (canvas.width !== logicalWidth || canvas.height !== logicalHeight) {
+			canvas.width = logicalWidth;
+			canvas.height = logicalHeight;
 		}
 
 		context.imageSmoothingEnabled = false;
 		context.clearRect(0, 0, canvas.width, canvas.height);
-		context.save();
-		context.scale(zoomPalette, zoomPalette);
+		// No context scale needed logic
 
 		// Draw Source Image
 		context.drawImage(image, 0, 0);
@@ -130,7 +126,7 @@ export function MapEditor() {
 		context.setLineDash([]);
 		context.lineDashOffset = 0;
 
-		context.restore();
+		// REMOVED context.restore();
 	}
 
 	function renderMap() {
@@ -143,18 +139,15 @@ export function MapEditor() {
 		const logicalWidth = mapSize.width * TILE_WIDTH;
 		const logicalHeight = mapSize.height * TILE_HEIGHT;
 
-		const displayWidth = logicalWidth * zoomMap;
-		const displayHeight = logicalHeight * zoomMap;
-
-		if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-			canvas.width = displayWidth;
-			canvas.height = displayHeight;
+		if (canvas.width !== logicalWidth || canvas.height !== logicalHeight) {
+			canvas.width = logicalWidth;
+			canvas.height = logicalHeight;
 		}
 
 		context.imageSmoothingEnabled = false;
 		context.clearRect(0, 0, canvas.width, canvas.height);
-		context.save();
-		context.scale(zoomMap, zoomMap);
+
+		// No context scale needed
 
 		// 1. Draw Map Tiles (Layered)
 		layers.forEach((layer) => {
@@ -229,7 +222,7 @@ export function MapEditor() {
 			context.lineDashOffset = 0;
 		}
 
-		context.restore();
+		// REMOVED context.restore();
 	}
 
 	// Load Image and Init
@@ -483,9 +476,8 @@ export function MapEditor() {
 		if (!canvas) return;
 
 		isPaletteMouseDown.current = true;
-		const rect = canvas.getBoundingClientRect();
-		const x = (e.clientX - rect.left) / zoomPalette;
-		const y = (e.clientY - rect.top) / zoomPalette;
+		const x = e.nativeEvent.offsetX / zoomPalette;
+		const y = e.nativeEvent.offsetY / zoomPalette;
 
 		const tileX = Math.floor(x / TILE_WIDTH);
 		const tileY = Math.floor(y / TILE_HEIGHT);
@@ -503,9 +495,8 @@ export function MapEditor() {
 		const image = imageRef.current;
 		if (!canvas || !image) return;
 
-		const rect = canvas.getBoundingClientRect();
-		const x = (e.clientX - rect.left) / zoomPalette;
-		const y = (e.clientY - rect.top) / zoomPalette;
+		const x = e.nativeEvent.offsetX / zoomPalette;
+		const y = e.nativeEvent.offsetY / zoomPalette;
 
 		// Constrain to image bounds
 		const tileX = Math.max(0, Math.min(Math.floor(x / TILE_WIDTH), Math.floor(image.width / TILE_WIDTH) - 1));
@@ -547,9 +538,8 @@ export function MapEditor() {
 			handleMapInteraction(e);
 		} else {
 			// Hover Logic
-			const rect = canvas.getBoundingClientRect();
-			const x = (e.clientX - rect.left) / zoomMap;
-			const y = (e.clientY - rect.top) / zoomMap;
+			const x = e.nativeEvent.offsetX / zoomMap;
+			const y = e.nativeEvent.offsetY / zoomMap;
 
 			const context = mapContextRef.current;
 			if (!context) return;
@@ -557,12 +547,9 @@ export function MapEditor() {
 			// Re-render to clear old hover
 			renderMap();
 
-			// Draw cursor on top of map (renderMap resets transform, so we need to apply scale again or draw in logical coords)
+			// Draw cursor on top of map (No scale needed, we draw in logical coords)
 			// Wait, renderMap uses context.save/restore. The context is clean here.
 			// We should probably rely on renderMap loop, but simpler to just set scale here too.
-			context.save();
-			context.scale(zoomMap, zoomMap);
-
 			// For hover, let's show the stamp size if using brush
 			const gridX = Math.floor(x / TILE_WIDTH) * TILE_WIDTH;
 			const gridY = Math.floor(y / TILE_HEIGHT) * TILE_HEIGHT;
@@ -632,17 +619,18 @@ export function MapEditor() {
 				context.setLineDash([]);
 				context.lineDashOffset = 0;
 			}
-			context.restore();
+			context.setLineDash([]);
+			context.lineDashOffset = 0;
 		}
+		// context.restore(); // Removed
 	}
 
 	function handleMapInteraction(e: MouseEvent<HTMLCanvasElement>) {
 		const canvas = mapCanvasRef.current;
 		if (!canvas) return;
 
-		const rect = canvas.getBoundingClientRect();
-		const x = (e.clientX - rect.left) / zoomMap;
-		const y = (e.clientY - rect.top) / zoomMap;
+		const x = e.nativeEvent.offsetX / zoomMap;
+		const y = e.nativeEvent.offsetY / zoomMap;
 
 		const pixelWidth = mapSize.width * TILE_WIDTH;
 		const pixelHeight = mapSize.height * TILE_HEIGHT;
@@ -929,6 +917,11 @@ export function MapEditor() {
 						<canvas
 							ref={paletteCanvasRef}
 							className="cursor-pointer block origin-top-left"
+							style={{
+								width: imageRef.current ? imageRef.current.width * zoomPalette : undefined,
+								height: imageRef.current ? imageRef.current.height * zoomPalette : undefined,
+								imageRendering: "pixelated"
+							}}
 							onMouseDown={handlePaletteMouseDown}
 							onMouseMove={handlePaletteMouseMove}
 							onMouseUp={handlePaletteMouseUp}
@@ -960,6 +953,11 @@ export function MapEditor() {
 							id="myCanvas"
 							ref={mapCanvasRef}
 							className="block bg-white shadow-sm origin-top-left"
+							style={{
+								width: mapSize.width * TILE_WIDTH * zoomMap,
+								height: mapSize.height * TILE_HEIGHT * zoomMap,
+								imageRendering: "pixelated"
+							}}
 							onMouseDown={handleMapMouseDown}
 							onMouseMove={handleMapMouseMove}
 							onMouseUp={handleMapMouseUp}

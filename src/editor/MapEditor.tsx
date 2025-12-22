@@ -3,13 +3,9 @@ import spritesheet from "../assets/project.png";
 
 const TILE_WIDTH = 32;
 const TILE_HEIGHT = 32;
-const MAP_ROWS = 3;
-const MAP_COLUMNS = 4;
-const MAP_WIDTH = MAP_COLUMNS * TILE_WIDTH;
-const MAP_HEIGHT = MAP_ROWS * TILE_HEIGHT;
 
 type TileData = { tileId: number; flipX: boolean };
-type Tool = "brush" | "eraser" | "bucket" | "marquee";
+type Tool = "brush" | "eraser" | "fill" | "marquee";
 type SelectionRect = { x: number; y: number; w: number; h: number };
 
 
@@ -20,6 +16,7 @@ export function MapEditor() {
 	const paletteContextRef = useRef<CanvasRenderingContext2D | null>(null);
 	const imageRef = useRef<HTMLImageElement | null>(null);
 
+	const [mapSize, setMapSize] = useState({ width: 64, height: 16 });
 	const [paletteSelection, setPaletteSelection] = useState<SelectionRect>({ x: 0, y: 0, w: 1, h: 1 });
 	const [mapGrid, setMapGrid] = useState<Record<string, TileData>>({});
 	const [currentTool, setCurrentTool] = useState<Tool>("brush");
@@ -31,6 +28,36 @@ export function MapEditor() {
 	const lastPaintedTiles = useRef<Set<string>>(new Set());
 	const selectionStart = useRef<{ x: number; y: number } | null>(null);
 	const paletteSelectionStart = useRef<{ x: number; y: number } | null>(null);
+
+	// History Stacks
+	const historyPast = useRef<Record<string, TileData>[]>([]);
+	const historyFuture = useRef<Record<string, TileData>[]>([]);
+
+	function saveCheckpoint() {
+		historyPast.current.push({ ...mapGrid });
+		if (historyPast.current.length > 50) historyPast.current.shift(); // Limit history
+		historyFuture.current = []; // Clear redo stack on new action
+	}
+
+	function performUndo() {
+		if (historyPast.current.length === 0) return;
+
+		const previous = historyPast.current.pop();
+		if (previous) {
+			historyFuture.current.push({ ...mapGrid });
+			setMapGrid(previous);
+		}
+	}
+
+	function performRedo() {
+		if (historyFuture.current.length === 0) return;
+
+		const next = historyFuture.current.pop();
+		if (next) {
+			historyPast.current.push({ ...mapGrid });
+			setMapGrid(next);
+		}
+	}
 
 	function renderPalette() {
 		const canvas = paletteCanvasRef.current;
@@ -72,9 +99,17 @@ export function MapEditor() {
 		const drawH = paletteSelection.h * TILE_HEIGHT;
 
 		context.beginPath();
-		context.strokeStyle = "red";
+		context.strokeStyle = "white";
 		context.lineWidth = 2;
+		context.setLineDash([4, 4]);
 		context.strokeRect(drawX, drawY, drawW, drawH);
+
+		context.strokeStyle = "black";
+		context.lineDashOffset = 4;
+		context.strokeRect(drawX, drawY, drawW, drawH);
+
+		context.setLineDash([]);
+		context.lineDashOffset = 0;
 	}
 
 	function renderMap() {
@@ -83,11 +118,20 @@ export function MapEditor() {
 		const image = imageRef.current;
 		if (!canvas || !context || !image) return;
 
+		// Resize map canvas
+		const pixelWidth = mapSize.width * TILE_WIDTH;
+		const pixelHeight = mapSize.height * TILE_HEIGHT;
+		if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+			canvas.width = pixelWidth;
+			canvas.height = pixelHeight;
+		}
+
 		context.clearRect(0, 0, canvas.width, canvas.height);
 
 		// 1. Draw Map Tiles
 		Object.entries(mapGrid).forEach(([key, tileData]) => {
 			const [gx, gy] = key.split(",").map(Number);
+			// Keys are now stored as "x,y" indices
 			const drawX = gx * TILE_WIDTH;
 			const drawY = gy * TILE_HEIGHT;
 
@@ -110,13 +154,13 @@ export function MapEditor() {
 
 		// 2. Draw Grid
 		context.beginPath();
-		for (let i = 0; i <= MAP_COLUMNS; i++) {
+		for (let i = 0; i <= mapSize.width; i++) {
 			context.moveTo(i * TILE_WIDTH, 0);
-			context.lineTo(i * TILE_WIDTH, MAP_HEIGHT);
+			context.lineTo(i * TILE_WIDTH, pixelHeight);
 		}
-		for (let i = 0; i <= MAP_ROWS; i++) {
+		for (let i = 0; i <= mapSize.height; i++) {
 			context.moveTo(0, i * TILE_HEIGHT);
-			context.lineTo(MAP_WIDTH, i * TILE_HEIGHT);
+			context.lineTo(pixelWidth, i * TILE_HEIGHT);
 		}
 		context.strokeStyle = "rgba(0,0,0, 0.4)";
 		context.lineWidth = 1;
@@ -160,8 +204,8 @@ export function MapEditor() {
 
 			// Init Map Canvas
 			if (mapCanvasRef.current) {
-				mapCanvasRef.current.width = MAP_WIDTH;
-				mapCanvasRef.current.height = MAP_HEIGHT;
+				mapCanvasRef.current.width = mapSize.width * TILE_WIDTH;
+				mapCanvasRef.current.height = mapSize.height * TILE_HEIGHT;
 				renderMap();
 			}
 
@@ -181,12 +225,46 @@ export function MapEditor() {
 
 	useEffect(() => {
 		renderMap();
-	}, [mapGrid, selection]);
+	}, [mapGrid, selection, mapSize]);
 
 	useEffect(() => {
 		function handleKeyDown(e: KeyboardEvent) {
+			// Ignore if input is focused
+			if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+			// Tool Shortcuts
+			if (e.key.toLowerCase() === "b") setCurrentTool("brush");
+			if (e.key.toLowerCase() === "e") setCurrentTool("eraser");
+			if (e.key.toLowerCase() === "g" || e.key.toLowerCase() === "f") setCurrentTool("fill");
+
+			// Palette Navigation (Arrow Keys)
+			if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+				e.preventDefault();
+				setPaletteSelection(prev => {
+					const img = imageRef.current;
+					if (!img) return prev;
+
+					let { x, y } = prev;
+					const maxW = Math.floor(img.width / TILE_WIDTH) - 1;
+					const maxH = Math.floor(img.height / TILE_HEIGHT) - 1;
+
+					if (e.key === "ArrowLeft") x = Math.max(0, x - 1);
+					if (e.key === "ArrowRight") x = Math.min(maxW, x + 1);
+					if (e.key === "ArrowUp") y = Math.max(0, y - 1);
+					if (e.key === "ArrowDown") y = Math.min(maxH, y + 1);
+
+					// Reset selection size to 1x1 on move? Or keep it?
+					// Standard behavior for simple nav is usually 1x1, but keeping stamp is powerful.
+					// Let's keep the stamp size for now as it's useful.
+					return { ...prev, x, y };
+				});
+				// Switch to brush if moving palette selection
+				setCurrentTool("brush");
+			}
+
 			if (e.key === "Delete" || e.key === "Backspace") {
 				if (selection) {
+					saveCheckpoint();
 					setMapGrid((prev) => {
 						const next = { ...prev };
 						for (let x = selection.x; x < selection.x + selection.w; x++) {
@@ -196,6 +274,16 @@ export function MapEditor() {
 						}
 						return next;
 					});
+				}
+			}
+
+			// Undo/Redo Shortcuts
+			if ((e.metaKey || e.ctrlKey) && e.key === "z") {
+				e.preventDefault();
+				if (e.shiftKey) {
+					performRedo();
+				} else {
+					performUndo();
 				}
 			}
 
@@ -217,6 +305,7 @@ export function MapEditor() {
 
 			if ((e.metaKey || e.ctrlKey) && e.key === "v") {
 				if (clipboard) {
+					saveCheckpoint();
 					const targetX = selection ? selection.x : 0;
 					const targetY = selection ? selection.y : 0;
 
@@ -239,9 +328,9 @@ export function MapEditor() {
 	}, [mapGrid, selection, clipboard]);
 
 	function paintTile(gridX: number, gridY: number, tileId: number | null) {
-		const x = gridX / TILE_WIDTH;
-		const y = gridY / TILE_HEIGHT;
-		const key = `${x},${y}`;
+		const gx = Math.floor(gridX / TILE_WIDTH);
+		const gy = Math.floor(gridY / TILE_HEIGHT);
+		const key = `${gx},${gy}`;
 
 		setMapGrid((prev) => {
 			const next = { ...prev };
@@ -255,6 +344,7 @@ export function MapEditor() {
 	}
 
 	function floodFill(startGridX: number, startGridY: number, fillTileId: number) {
+		// startGridX/Y are passed as INDICES (e.g. 1, 2)
 		const startKey = `${startGridX},${startGridY}`;
 		const startTileId = mapGrid[startKey]?.tileId;
 
@@ -273,7 +363,7 @@ export function MapEditor() {
 			const key = `${cx},${cy}`;
 
 			if (visited.has(key)) continue;
-			if (cx < 0 || cx >= MAP_COLUMNS || cy < 0 || cy >= MAP_ROWS) continue;
+			if (cx < 0 || cx >= mapSize.width || cy < 0 || cy >= mapSize.height) continue;
 
 			const currentId = getId(cx, cy);
 			// Match if IDs are equal (including both undefined)
@@ -338,6 +428,10 @@ export function MapEditor() {
 	}
 
 	function handleMapMouseDown(e: MouseEvent<HTMLCanvasElement>) {
+		if (currentTool !== "marquee") {
+			// Save state before painting starts
+			saveCheckpoint();
+		}
 		isMouseDown.current = true;
 		lastPaintedTiles.current.clear();
 		handleMapInteraction(e);
@@ -375,14 +469,33 @@ export function MapEditor() {
 			context.lineWidth = 1;
 
 			if (currentTool === "brush") {
-				context.strokeRect(
-					gridX,
-					gridY,
-					paletteSelection.w * TILE_WIDTH,
-					paletteSelection.h * TILE_HEIGHT
-				);
+				const drawW = paletteSelection.w * TILE_WIDTH;
+				const drawH = paletteSelection.h * TILE_HEIGHT;
+
+				context.beginPath();
+				context.strokeStyle = "white";
+				context.lineWidth = 1;
+				context.setLineDash([4, 4]);
+				context.strokeRect(gridX, gridY, drawW, drawH);
+
+				context.strokeStyle = "black";
+				context.lineDashOffset = 4;
+				context.strokeRect(gridX, gridY, drawW, drawH);
+				context.setLineDash([]);
+				context.lineDashOffset = 0;
 			} else {
+				// Single tile hover (Eraser, Fill, etc)
+				context.beginPath();
+				context.strokeStyle = "white";
+				context.lineWidth = 1;
+				context.setLineDash([4, 4]);
 				context.strokeRect(gridX, gridY, TILE_WIDTH, TILE_HEIGHT);
+
+				context.strokeStyle = "black";
+				context.lineDashOffset = 4;
+				context.strokeRect(gridX, gridY, TILE_WIDTH, TILE_HEIGHT);
+				context.setLineDash([]);
+				context.lineDashOffset = 0;
 			}
 		}
 	}
@@ -395,11 +508,17 @@ export function MapEditor() {
 		const x = e.clientX - rect.left;
 		const y = e.clientY - rect.top;
 
-		if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) return;
+		const pixelWidth = mapSize.width * TILE_WIDTH;
+		const pixelHeight = mapSize.height * TILE_HEIGHT;
+
+		if (x < 0 || y < 0 || x >= pixelWidth || y >= pixelHeight) return;
 
 		const gridX = Math.floor(x / TILE_WIDTH) * TILE_WIDTH;
 		const gridY = Math.floor(y / TILE_HEIGHT) * TILE_HEIGHT;
-		const tileKey = `${gridX},${gridY}`;
+		// Use index key for uniqueness check
+		const gx = Math.floor(x / TILE_WIDTH);
+		const gy = Math.floor(y / TILE_HEIGHT);
+		const tileKey = `${gx},${gy}`;
 
 		if (lastPaintedTiles.current.has(tileKey)) return;
 
@@ -416,12 +535,12 @@ export function MapEditor() {
 					const py = paletteSelection.y + dy;
 					const tileId = py * tilesPerRow + px;
 
-					// Target coordinates
+					// Target coordinates (Pixel)
 					const targetX = gridX + (dx * TILE_WIDTH);
 					const targetY = gridY + (dy * TILE_HEIGHT);
 
 					// Boundary check
-					if (targetX >= MAP_WIDTH || targetY >= MAP_HEIGHT) continue;
+					if (targetX >= pixelWidth || targetY >= pixelHeight) continue;
 
 					paintTile(targetX, targetY, tileId);
 				}
@@ -430,13 +549,11 @@ export function MapEditor() {
 		} else if (currentTool === "eraser") {
 			paintTile(gridX, gridY, null);
 			lastPaintedTiles.current.add(tileKey);
-		} else if (currentTool === "bucket" && e.type === "mousedown") {
+		} else if (currentTool === "fill" && e.type === "mousedown") {
 			// Bucket fill using the top-left tile of the selection
 			const fillTileId = paletteSelection.y * tilesPerRow + paletteSelection.x;
-			floodFill(gridX / TILE_WIDTH, gridY / TILE_HEIGHT, fillTileId);
+			floodFill(gx, gy, fillTileId);
 		} else if (currentTool === "marquee") {
-			const gx = gridX / TILE_WIDTH;
-			const gy = gridY / TILE_HEIGHT;
 			if (e.type === "mousedown") {
 				selectionStart.current = { x: gx, y: gy };
 				setSelection({ x: gx, y: gy, w: 1, h: 1 });
@@ -527,14 +644,15 @@ export function MapEditor() {
 
 		// Create a temporary canvas to render just the map
 		const tempCanvas = document.createElement("canvas");
-		tempCanvas.width = MAP_WIDTH;
-		tempCanvas.height = MAP_HEIGHT;
+		tempCanvas.width = mapSize.width * TILE_WIDTH;
+		tempCanvas.height = mapSize.height * TILE_HEIGHT;
 		const ctx = tempCanvas.getContext("2d");
 		if (!ctx) return;
 
 		// Draw tiles
 		Object.entries(mapGrid).forEach(([key, tileData]) => {
 			const [gx, gy] = key.split(",").map(Number);
+			// Index-based keys
 			const drawX = gx * TILE_WIDTH;
 			const drawY = gy * TILE_HEIGHT;
 
@@ -566,11 +684,31 @@ export function MapEditor() {
 
 
 	return (
-		<div>
-			<h1>Map Editor</h1>
+		<div className="h-screen flex flex-col p-4 box-border">
+			<h1 className="text-2xl font-bold mb-4">Map Editor</h1>
 
 			{/* Toolbar row */}
-			<div className="flex flex-wrap gap-4 items-center mb-4">
+			<div className="flex flex-wrap gap-4 items-center mb-4 flex-none">
+				<div className="flex gap-2 items-center bg-gray-100 p-2 rounded">
+					<label className="text-sm">
+						W:
+						<input
+							type="number"
+							className="ml-1 w-16 p-1 rounded border"
+							value={mapSize.width}
+							onChange={(e) => setMapSize(prev => ({ ...prev, width: Number(e.target.value) }))}
+						/>
+					</label>
+					<label className="text-sm">
+						H:
+						<input
+							type="number"
+							className="ml-1 w-16 p-1 rounded border"
+							value={mapSize.height}
+							onChange={(e) => setMapSize(prev => ({ ...prev, height: Number(e.target.value) }))}
+						/>
+					</label>
+				</div>
 				<input
 					type="file"
 					accept="image/png"
@@ -582,20 +720,23 @@ export function MapEditor() {
 					<button
 						className={`px-3 py-1 rounded text-sm ${currentTool === "brush" ? "bg-blue-600 text-white" : "bg-white text-gray-700"}`}
 						onClick={() => setCurrentTool("brush")}
+						title="Shortcut: B"
 					>
 						Brush
 					</button>
 					<button
 						className={`px-3 py-1 rounded text-sm ${currentTool === "eraser" ? "bg-blue-600 text-white" : "bg-white text-gray-700"}`}
 						onClick={() => setCurrentTool("eraser")}
+						title="Shortcut: E"
 					>
 						Eraser
 					</button>
 					<button
-						className={`px-3 py-1 rounded text-sm ${currentTool === "bucket" ? "bg-blue-600 text-white" : "bg-white text-gray-700"}`}
-						onClick={() => setCurrentTool("bucket")}
+						className={`px-3 py-1 rounded text-sm ${currentTool === "fill" ? "bg-blue-600 text-white" : "bg-white text-gray-700"}`}
+						onClick={() => setCurrentTool("fill")}
+						title="Shortcut: F or G"
 					>
-						Bucket
+						Fill
 					</button>
 					<button
 						className={`px-3 py-1 rounded text-sm ${currentTool === "marquee" ? "bg-blue-600 text-white" : "bg-white text-gray-700"}`}
@@ -630,10 +771,10 @@ export function MapEditor() {
 				</div>
 			</div>
 
-			<div className="flex gap-4 items-start">
-				<div className="flex-none w-[280px]">
+			<div className="flex gap-4 items-start flex-1 overflow-hidden">
+				<div className="flex-none w-[280px] flex flex-col h-full">
 					<h3 className="font-bold mb-2">Palette</h3>
-					<div className="border border-gray-400 inline-block bg-gray-50 max-h-[80vh] overflow-auto">
+					<div className="border border-gray-400 bg-gray-50 flex-1 overflow-auto">
 						<canvas
 							ref={paletteCanvasRef}
 							className="cursor-pointer block"
@@ -641,29 +782,38 @@ export function MapEditor() {
 							onMouseMove={handlePaletteMouseMove}
 							onMouseUp={handlePaletteMouseUp}
 							onMouseLeave={handlePaletteMouseUp}
+							aria-label="Palette Grid - Use arrow keys to navigate"
+							tabIndex={0}
 						/>
 					</div>
 					<div className="mt-2 text-sm text-gray-500">
-						Drag to select multiple tiles.
+						Drag to select multiple tiles.<br />
+						Shortcuts: B (Brush), E (Eraser), F (Fill)
 					</div>
 				</div>
 
-				<div className="flex-1 overflow-auto max-h-[80vh] border border-gray-300 bg-white relative">
-					<canvas
-						id="myCanvas"
-						ref={mapCanvasRef}
-						className="block"
-						onMouseDown={handleMapMouseDown}
-						onMouseMove={handleMapMouseMove}
-						onMouseUp={handleMapMouseUp}
-						onMouseLeave={handleMapMouseUp}
-					></canvas>
+				<div className="flex-1 h-full min-w-0 flex flex-col">
+					<h3 className="font-bold mb-2">Map</h3>
+					<div className="border-2 border-gray-300 bg-gray-100 flex-1 overflow-auto relative rounded">
+						<canvas
+							id="myCanvas"
+							ref={mapCanvasRef}
+							className="block bg-white shadow-sm"
+							onMouseDown={handleMapMouseDown}
+							onMouseMove={handleMapMouseMove}
+							onMouseUp={handleMapMouseUp}
+							onMouseLeave={handleMapMouseUp}
+							aria-label="Map Grid"
+							tabIndex={0}
+						></canvas>
+					</div>
 				</div>
 			</div>
 
-			<div id="result" className="mt-4 whitespace-pre font-mono text-sm">
+			<div id="result" className="mt-4 whitespace-pre font-mono text-sm hidden">
 				{resultString}
 			</div>
 		</div>
 	);
+
 }

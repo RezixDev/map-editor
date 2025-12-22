@@ -20,15 +20,17 @@ export function MapEditor() {
 	const paletteContextRef = useRef<CanvasRenderingContext2D | null>(null);
 	const imageRef = useRef<HTMLImageElement | null>(null);
 
-	const [selectedTile, setSelectedTile] = useState(0);
+	const [paletteSelection, setPaletteSelection] = useState<SelectionRect>({ x: 0, y: 0, w: 1, h: 1 });
 	const [mapGrid, setMapGrid] = useState<Record<string, TileData>>({});
 	const [currentTool, setCurrentTool] = useState<Tool>("brush");
 	const [selection, setSelection] = useState<SelectionRect | null>(null);
 	const [clipboard, setClipboard] = useState<Record<string, TileData> | null>(null);
 
 	const isMouseDown = useRef(false);
+	const isPaletteMouseDown = useRef(false);
 	const lastPaintedTiles = useRef<Set<string>>(new Set());
 	const selectionStart = useRef<{ x: number; y: number } | null>(null);
+	const paletteSelectionStart = useRef<{ x: number; y: number } | null>(null);
 
 	function renderPalette() {
 		const canvas = paletteCanvasRef.current;
@@ -64,16 +66,15 @@ export function MapEditor() {
 		context.stroke();
 
 		// Draw Selection Box on Palette
-		const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
-		const tileX = selectedTile % tilesPerRow;
-		const tileY = Math.floor(selectedTile / tilesPerRow);
-		const drawX = tileX * TILE_WIDTH;
-		const drawY = tileY * TILE_HEIGHT;
+		const drawX = paletteSelection.x * TILE_WIDTH;
+		const drawY = paletteSelection.y * TILE_HEIGHT;
+		const drawW = paletteSelection.w * TILE_WIDTH;
+		const drawH = paletteSelection.h * TILE_HEIGHT;
 
 		context.beginPath();
 		context.strokeStyle = "red";
 		context.lineWidth = 2;
-		context.strokeRect(drawX, drawY, TILE_WIDTH, TILE_HEIGHT);
+		context.strokeRect(drawX, drawY, drawW, drawH);
 	}
 
 	function renderMap() {
@@ -173,10 +174,10 @@ export function MapEditor() {
 		};
 	}, []);
 
-	// Redraw selection box when selectedTile changes
+	// Redraw selection box when paletteSelection changes
 	useEffect(() => {
 		renderPalette();
-	}, [selectedTile]);
+	}, [paletteSelection]);
 
 	useEffect(() => {
 		renderMap();
@@ -290,7 +291,27 @@ export function MapEditor() {
 		setMapGrid(newGrid);
 	}
 
-	function handlePaletteClick(e: MouseEvent<HTMLCanvasElement>) {
+	function handlePaletteMouseDown(e: MouseEvent<HTMLCanvasElement>) {
+		const canvas = paletteCanvasRef.current;
+		if (!canvas) return;
+
+		isPaletteMouseDown.current = true;
+		const rect = canvas.getBoundingClientRect();
+		const x = e.clientX - rect.left;
+		const y = e.clientY - rect.top;
+
+		const tileX = Math.floor(x / TILE_WIDTH);
+		const tileY = Math.floor(y / TILE_HEIGHT);
+
+		paletteSelectionStart.current = { x: tileX, y: tileY };
+		setPaletteSelection({ x: tileX, y: tileY, w: 1, h: 1 });
+
+		if (currentTool !== "brush") setCurrentTool("brush");
+	}
+
+	function handlePaletteMouseMove(e: MouseEvent<HTMLCanvasElement>) {
+		if (!isPaletteMouseDown.current || !paletteSelectionStart.current) return;
+
 		const canvas = paletteCanvasRef.current;
 		const image = imageRef.current;
 		if (!canvas || !image) return;
@@ -299,13 +320,21 @@ export function MapEditor() {
 		const x = e.clientX - rect.left;
 		const y = e.clientY - rect.top;
 
-		const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
-		const tileX = Math.floor(x / TILE_WIDTH);
-		const tileY = Math.floor(y / TILE_HEIGHT);
-		const newSelectedTile = tileY * tilesPerRow + tileX;
+		// Constrain to image bounds
+		const tileX = Math.max(0, Math.min(Math.floor(x / TILE_WIDTH), Math.floor(image.width / TILE_WIDTH) - 1));
+		const tileY = Math.max(0, Math.min(Math.floor(y / TILE_HEIGHT), Math.floor(image.height / TILE_HEIGHT) - 1));
 
-		setSelectedTile(newSelectedTile);
-		if (currentTool !== "brush") setCurrentTool("brush");
+		const start = paletteSelectionStart.current;
+		const minX = Math.min(start.x, tileX);
+		const minY = Math.min(start.y, tileY);
+		const w = Math.abs(start.x - tileX) + 1;
+		const h = Math.abs(start.y - tileY) + 1;
+
+		setPaletteSelection({ x: minX, y: minY, w, h });
+	}
+
+	function handlePaletteMouseUp() {
+		isPaletteMouseDown.current = false;
 	}
 
 	function handleMapMouseDown(e: MouseEvent<HTMLCanvasElement>) {
@@ -337,14 +366,24 @@ export function MapEditor() {
 			// Re-render to clear old hover
 			renderMap();
 
-			// Draw Hover Box
+			// For hover, let's show the stamp size if using brush
 			const gridX = Math.floor(x / TILE_WIDTH) * TILE_WIDTH;
 			const gridY = Math.floor(y / TILE_HEIGHT) * TILE_HEIGHT;
 
 			context.beginPath();
 			context.strokeStyle = "blue";
 			context.lineWidth = 1;
-			context.strokeRect(gridX, gridY, TILE_WIDTH, TILE_HEIGHT);
+
+			if (currentTool === "brush") {
+				context.strokeRect(
+					gridX,
+					gridY,
+					paletteSelection.w * TILE_WIDTH,
+					paletteSelection.h * TILE_HEIGHT
+				);
+			} else {
+				context.strokeRect(gridX, gridY, TILE_WIDTH, TILE_HEIGHT);
+			}
 		}
 	}
 
@@ -364,14 +403,37 @@ export function MapEditor() {
 
 		if (lastPaintedTiles.current.has(tileKey)) return;
 
+		// Logic based on tool
+		const image = imageRef.current;
+		if (!image) return;
+		const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+
 		if (currentTool === "brush") {
-			paintTile(gridX, gridY, selectedTile);
+			// Multi-tile painting (stamp)
+			for (let dy = 0; dy < paletteSelection.h; dy++) {
+				for (let dx = 0; dx < paletteSelection.w; dx++) {
+					const px = paletteSelection.x + dx;
+					const py = paletteSelection.y + dy;
+					const tileId = py * tilesPerRow + px;
+
+					// Target coordinates
+					const targetX = gridX + (dx * TILE_WIDTH);
+					const targetY = gridY + (dy * TILE_HEIGHT);
+
+					// Boundary check
+					if (targetX >= MAP_WIDTH || targetY >= MAP_HEIGHT) continue;
+
+					paintTile(targetX, targetY, tileId);
+				}
+			}
 			lastPaintedTiles.current.add(tileKey);
 		} else if (currentTool === "eraser") {
 			paintTile(gridX, gridY, null);
 			lastPaintedTiles.current.add(tileKey);
 		} else if (currentTool === "bucket" && e.type === "mousedown") {
-			floodFill(gridX / TILE_WIDTH, gridY / TILE_HEIGHT, selectedTile);
+			// Bucket fill using the top-left tile of the selection
+			const fillTileId = paletteSelection.y * tilesPerRow + paletteSelection.x;
+			floodFill(gridX / TILE_WIDTH, gridY / TILE_HEIGHT, fillTileId);
 		} else if (currentTool === "marquee") {
 			const gx = gridX / TILE_WIDTH;
 			const gy = gridY / TILE_HEIGHT;
@@ -575,11 +637,14 @@ export function MapEditor() {
 						<canvas
 							ref={paletteCanvasRef}
 							className="cursor-pointer block"
-							onClick={handlePaletteClick}
+							onMouseDown={handlePaletteMouseDown}
+							onMouseMove={handlePaletteMouseMove}
+							onMouseUp={handlePaletteMouseUp}
+							onMouseLeave={handlePaletteMouseUp}
 						/>
 					</div>
 					<div className="mt-2 text-sm text-gray-500">
-						Select a tile to paint.
+						Drag to select multiple tiles.
 					</div>
 				</div>
 

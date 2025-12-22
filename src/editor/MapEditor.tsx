@@ -5,6 +5,7 @@ const TILE_WIDTH = 32;
 const TILE_HEIGHT = 32;
 
 type TileData = { tileId: number; flipX: boolean };
+type Layer = { id: string; name: string; visible: boolean; opacity: number; data: Record<string, TileData> };
 type Tool = "brush" | "eraser" | "fill" | "marquee";
 type SelectionRect = { x: number; y: number; w: number; h: number };
 
@@ -21,7 +22,12 @@ export function MapEditor() {
 	const [zoomMap, setZoomMap] = useState(1);
 	const [zoomPalette, setZoomPalette] = useState(1);
 	const [paletteSelection, setPaletteSelection] = useState<SelectionRect>({ x: 0, y: 0, w: 1, h: 1 });
-	const [mapGrid, setMapGrid] = useState<Record<string, TileData>>({});
+	const [layers, setLayers] = useState<Layer[]>([
+		{ id: "ground", name: "Ground", visible: true, opacity: 1, data: {} },
+		{ id: "decor", name: "Decoration", visible: true, opacity: 1, data: {} },
+		{ id: "collision", name: "Collision", visible: true, opacity: 0.5, data: {} },
+	]);
+	const [activeLayerIndex, setActiveLayerIndex] = useState(0);
 	const [currentTool, setCurrentTool] = useState<Tool>("brush");
 	const [selection, setSelection] = useState<SelectionRect | null>(null);
 	const [clipboard, setClipboard] = useState<Record<string, TileData> | null>(null);
@@ -34,11 +40,11 @@ export function MapEditor() {
 	const paletteSelectionStart = useRef<{ x: number; y: number } | null>(null);
 
 	// History Stacks
-	const historyPast = useRef<Record<string, TileData>[]>([]);
-	const historyFuture = useRef<Record<string, TileData>[]>([]);
+	const historyPast = useRef<Layer[][]>([]);
+	const historyFuture = useRef<Layer[][]>([]);
 
 	function saveCheckpoint() {
-		historyPast.current.push({ ...mapGrid });
+		historyPast.current.push(JSON.parse(JSON.stringify(layers)));
 		if (historyPast.current.length > 50) historyPast.current.shift(); // Limit history
 		historyFuture.current = []; // Clear redo stack on new action
 	}
@@ -48,8 +54,8 @@ export function MapEditor() {
 
 		const previous = historyPast.current.pop();
 		if (previous) {
-			historyFuture.current.push({ ...mapGrid });
-			setMapGrid(previous);
+			historyFuture.current.push(JSON.parse(JSON.stringify(layers)));
+			setLayers(previous);
 		}
 	}
 
@@ -58,8 +64,8 @@ export function MapEditor() {
 
 		const next = historyFuture.current.pop();
 		if (next) {
-			historyPast.current.push({ ...mapGrid });
-			setMapGrid(next);
+			historyPast.current.push(JSON.parse(JSON.stringify(layers)));
+			setLayers(next);
 		}
 	}
 
@@ -150,28 +156,36 @@ export function MapEditor() {
 		context.save();
 		context.scale(zoomMap, zoomMap);
 
-		// 1. Draw Map Tiles
-		Object.entries(mapGrid).forEach(([key, tileData]) => {
-			const [gx, gy] = key.split(",").map(Number);
-			// Keys are now stored as "x,y" indices
-			const drawX = gx * TILE_WIDTH;
-			const drawY = gy * TILE_HEIGHT;
+		// 1. Draw Map Tiles (Layered)
+		layers.forEach((layer) => {
+			if (!layer.visible) return;
 
-			const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
-			const srcX = (tileData.tileId % tilesPerRow) * TILE_WIDTH;
-			const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
+			context.save();
+			context.globalAlpha = layer.opacity;
 
-			context.drawImage(
-				image,
-				srcX,
-				srcY,
-				TILE_WIDTH,
-				TILE_HEIGHT,
-				drawX,
-				drawY,
-				TILE_WIDTH,
-				TILE_HEIGHT
-			);
+			Object.entries(layer.data).forEach(([key, tileData]) => {
+				const [gx, gy] = key.split(",").map(Number);
+				const drawX = gx * TILE_WIDTH;
+				const drawY = gy * TILE_HEIGHT;
+
+				const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+				const srcX = (tileData.tileId % tilesPerRow) * TILE_WIDTH;
+				const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
+
+				context.drawImage(
+					image,
+					srcX,
+					srcY,
+					TILE_WIDTH,
+					TILE_HEIGHT,
+					drawX,
+					drawY,
+					TILE_WIDTH,
+					TILE_HEIGHT
+				);
+			});
+
+			context.restore();
 		});
 
 		// 2. Draw Grid
@@ -251,7 +265,7 @@ export function MapEditor() {
 
 	useEffect(() => {
 		renderMap();
-	}, [mapGrid, selection, mapSize, zoomMap]);
+	}, [layers, selection, mapSize, zoomMap]);
 
 	useEffect(() => {
 		function handleKeyDown(e: KeyboardEvent) {
@@ -291,13 +305,16 @@ export function MapEditor() {
 			if (e.key === "Delete" || e.key === "Backspace") {
 				if (selection) {
 					saveCheckpoint();
-					setMapGrid((prev) => {
-						const next = { ...prev };
+					setLayers((prev) => {
+						const next = [...prev];
+						const active = { ...next[activeLayerIndex], data: { ...next[activeLayerIndex].data } };
+
 						for (let x = selection.x; x < selection.x + selection.w; x++) {
 							for (let y = selection.y; y < selection.y + selection.h; y++) {
-								delete next[`${x},${y}`];
+								delete active.data[`${x},${y}`];
 							}
 						}
+						next[activeLayerIndex] = active;
 						return next;
 					});
 				}
@@ -316,11 +333,12 @@ export function MapEditor() {
 			if ((e.metaKey || e.ctrlKey) && e.key === "c") {
 				if (selection) {
 					const newClipboard: Record<string, TileData> = {};
+					const activeData = layers[activeLayerIndex].data;
 					for (let x = selection.x; x < selection.x + selection.w; x++) {
 						for (let y = selection.y; y < selection.y + selection.h; y++) {
 							const key = `${x},${y}`;
-							if (mapGrid[key]) {
-								newClipboard[`${x - selection.x},${y - selection.y}`] = mapGrid[key];
+							if (activeData[key]) {
+								newClipboard[`${x - selection.x},${y - selection.y}`] = activeData[key];
 							}
 						}
 					}
@@ -335,14 +353,18 @@ export function MapEditor() {
 					const targetX = selection ? selection.x : 0;
 					const targetY = selection ? selection.y : 0;
 
-					setMapGrid((prev) => {
-						const next = { ...prev };
+					setLayers((prev) => {
+						const next = [...prev];
+						const active = { ...next[activeLayerIndex], data: { ...next[activeLayerIndex].data } };
+
 						Object.entries(clipboard).forEach(([key, tileData]) => {
 							const [gx, gy] = key.split(",").map(Number);
 							const finalX = targetX + gx;
 							const finalY = targetY + gy;
-							next[`${finalX},${finalY}`] = { ...tileData };
+							active.data[`${finalX},${finalY}`] = { ...tileData };
 						});
+
+						next[activeLayerIndex] = active;
 						return next;
 					});
 				}
@@ -351,7 +373,7 @@ export function MapEditor() {
 
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [mapGrid, selection, clipboard]);
+	}, [layers, selection, clipboard, activeLayerIndex]);
 
 	// Resize Logic
 	useEffect(() => {
@@ -383,13 +405,18 @@ export function MapEditor() {
 		const gy = Math.floor(gridY / TILE_HEIGHT);
 		const key = `${gx},${gy}`;
 
-		setMapGrid((prev) => {
-			const next = { ...prev };
+		setLayers((prev) => {
+			const next = [...prev];
+			// Ensure we deep copy the active layer's data to avoid mutability issues
+			const active = { ...next[activeLayerIndex], data: { ...next[activeLayerIndex].data } };
+
 			if (tileId === null) {
-				delete next[key];
+				delete active.data[key];
 			} else {
-				next[key] = { tileId, flipX: false };
+				active.data[key] = { tileId, flipX: false };
 			}
+
+			next[activeLayerIndex] = active;
 			return next;
 		});
 	}
@@ -397,17 +424,21 @@ export function MapEditor() {
 	function floodFill(startGridX: number, startGridY: number, fillTileId: number) {
 		// startGridX/Y are passed as INDICES (e.g. 1, 2)
 		const startKey = `${startGridX},${startGridY}`;
-		const startTileId = mapGrid[startKey]?.tileId;
+		const activeData = layers[activeLayerIndex].data;
+
+		const startTileId = activeData[startKey]?.tileId;
 
 		// Prevent infinite recursion if filling same color
 		if (startTileId === fillTileId) return;
 
 		const visited = new Set<string>();
 		const queue = [[startGridX, startGridY]];
-		const newGrid = { ...mapGrid };
+
+		// We'll calculate the new data object based on current active layer
+		const newData = { ...activeData };
 
 		// Helper to get ID (undefined if empty)
-		const getId = (x: number, y: number) => newGrid[`${x},${y}`]?.tileId;
+		const getId = (x: number, y: number) => newData[`${x},${y}`]?.tileId;
 
 		while (queue.length > 0) {
 			const [cx, cy] = queue.pop()!;
@@ -421,7 +452,7 @@ export function MapEditor() {
 			if (currentId !== startTileId) continue;
 
 			visited.add(key);
-			newGrid[key] = { tileId: fillTileId, flipX: false };
+			newData[key] = { tileId: fillTileId, flipX: false };
 
 			queue.push([cx + 1, cy]);
 			queue.push([cx - 1, cy]);
@@ -429,7 +460,11 @@ export function MapEditor() {
 			queue.push([cx, cy - 1]);
 		}
 
-		setMapGrid(newGrid);
+		setLayers((prev) => {
+			const next = [...prev];
+			next[activeLayerIndex] = { ...next[activeLayerIndex], data: newData };
+			return next;
+		});
 	}
 
 	function handleWheel(e: React.WheelEvent, setZoom: React.Dispatch<React.SetStateAction<number>>) {
@@ -709,7 +744,7 @@ export function MapEditor() {
 	}
 
 	function handleSaveMap() {
-		const jsonString = JSON.stringify(mapGrid, null, 2);
+		const jsonString = JSON.stringify(layers, null, 2);
 		const blob = new Blob([jsonString], { type: "application/json" });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement("a");
@@ -727,8 +762,16 @@ export function MapEditor() {
 		reader.onload = (ev) => {
 			try {
 				const json = JSON.parse(ev.target?.result as string);
-				if (typeof json === "object" && json !== null) {
-					setMapGrid(json);
+				if (Array.isArray(json)) {
+					// V2: Layers
+					setLayers(json);
+				} else if (typeof json === "object" && json !== null) {
+					// V1: Legacy single grid -> Load into Ground
+					setLayers(prev => {
+						const next = [...prev];
+						next[0] = { ...next[0], data: json };
+						return next;
+					});
 				} else {
 					alert("Invalid JSON format");
 				}
@@ -750,28 +793,32 @@ export function MapEditor() {
 		const ctx = tempCanvas.getContext("2d");
 		if (!ctx) return;
 
-		// Draw tiles
-		Object.entries(mapGrid).forEach(([key, tileData]) => {
-			const [gx, gy] = key.split(",").map(Number);
-			// Index-based keys
-			const drawX = gx * TILE_WIDTH;
-			const drawY = gy * TILE_HEIGHT;
+		// Draw tiles (all layers)
+		layers.forEach(layer => {
+			if (!layer.visible) return;
+			ctx.globalAlpha = layer.opacity;
 
-			const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
-			const srcX = (tileData.tileId % tilesPerRow) * TILE_WIDTH;
-			const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
+			Object.entries(layer.data).forEach(([key, tileData]) => {
+				const [gx, gy] = key.split(",").map(Number);
+				const drawX = gx * TILE_WIDTH;
+				const drawY = gy * TILE_HEIGHT;
 
-			ctx.drawImage(
-				image,
-				srcX,
-				srcY,
-				TILE_WIDTH,
-				TILE_HEIGHT,
-				drawX,
-				drawY,
-				TILE_WIDTH,
-				TILE_HEIGHT
-			);
+				const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+				const srcX = (tileData.tileId % tilesPerRow) * TILE_WIDTH;
+				const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
+
+				ctx.drawImage(
+					image,
+					srcX,
+					srcY,
+					TILE_WIDTH,
+					TILE_HEIGHT,
+					drawX,
+					drawY,
+					TILE_WIDTH,
+					TILE_HEIGHT
+				);
+			});
 		});
 
 		const url = tempCanvas.toDataURL("image/png");
@@ -781,7 +828,7 @@ export function MapEditor() {
 		a.click();
 	}
 
-	const resultString = `const mapGrid = ${JSON.stringify(mapGrid, null, 2)};`;
+	const resultString = `const layers = ${JSON.stringify(layers, null, 2)};`;
 
 
 	return (
@@ -921,6 +968,35 @@ export function MapEditor() {
 							aria-label="Map Grid"
 							tabIndex={0}
 						></canvas>
+					</div>
+
+					{/* Layers UI */}
+					<div className="h-40 border-t border-gray-300 bg-gray-50 p-2 flex flex-col">
+						<h4 className="text-sm font-bold mb-2">Layers</h4>
+						<div className="flex-1 overflow-auto space-y-1">
+							{layers.map((layer, index) => (
+								<div
+									key={layer.id}
+									className={`flex items-center p-1 rounded cursor-pointer ${activeLayerIndex === index ? "bg-blue-100 ring-1 ring-blue-500" : "hover:bg-gray-100"}`}
+									onClick={() => setActiveLayerIndex(index)}
+								>
+									<button
+										className="mr-2 text-gray-500 hover:text-black"
+										onClick={(e) => {
+											e.stopPropagation();
+											setLayers(prev => {
+												const next = [...prev];
+												next[index] = { ...next[index], visible: !next[index].visible };
+												return next;
+											});
+										}}
+									>
+										{layer.visible ? "👁️" : "🚫"}
+									</button>
+									<span className={`text-sm select-none ${!layer.visible && "text-gray-400"}`}>{layer.name}</span>
+								</div>
+							))}
+						</div>
 					</div>
 				</div>
 			</div>

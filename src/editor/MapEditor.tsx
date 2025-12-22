@@ -17,6 +17,9 @@ export function MapEditor() {
 	const imageRef = useRef<HTMLImageElement | null>(null);
 
 	const [mapSize, setMapSize] = useState({ width: 64, height: 16 });
+	const [paletteWidth, setPaletteWidth] = useState(280);
+	const [zoomMap, setZoomMap] = useState(1);
+	const [zoomPalette, setZoomPalette] = useState(1);
 	const [paletteSelection, setPaletteSelection] = useState<SelectionRect>({ x: 0, y: 0, w: 1, h: 1 });
 	const [mapGrid, setMapGrid] = useState<Record<string, TileData>>({});
 	const [currentTool, setCurrentTool] = useState<Tool>("brush");
@@ -25,6 +28,7 @@ export function MapEditor() {
 
 	const isMouseDown = useRef(false);
 	const isPaletteMouseDown = useRef(false);
+	const isResizing = useRef(false);
 	const lastPaintedTiles = useRef<Set<string>>(new Set());
 	const selectionStart = useRef<{ x: number; y: number } | null>(null);
 	const paletteSelectionStart = useRef<{ x: number; y: number } | null>(null);
@@ -65,13 +69,22 @@ export function MapEditor() {
 		const image = imageRef.current;
 		if (!canvas || !context || !image) return;
 
-		// Resize canvas to match image if needed (though init/change does this, safety check)
-		if (canvas.width !== image.width || canvas.height !== image.height) {
-			canvas.width = image.width;
-			canvas.height = image.height;
+		// Resize canvas logic:
+		const logicalWidth = image.width;
+		const logicalHeight = image.height;
+
+		const displayWidth = logicalWidth * zoomPalette;
+		const displayHeight = logicalHeight * zoomPalette;
+
+		if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+			canvas.width = displayWidth;
+			canvas.height = displayHeight;
 		}
 
+		context.imageSmoothingEnabled = false;
 		context.clearRect(0, 0, canvas.width, canvas.height);
+		context.save();
+		context.scale(zoomPalette, zoomPalette);
 
 		// Draw Source Image
 		context.drawImage(image, 0, 0);
@@ -110,6 +123,8 @@ export function MapEditor() {
 
 		context.setLineDash([]);
 		context.lineDashOffset = 0;
+
+		context.restore();
 	}
 
 	function renderMap() {
@@ -119,14 +134,21 @@ export function MapEditor() {
 		if (!canvas || !context || !image) return;
 
 		// Resize map canvas
-		const pixelWidth = mapSize.width * TILE_WIDTH;
-		const pixelHeight = mapSize.height * TILE_HEIGHT;
-		if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
-			canvas.width = pixelWidth;
-			canvas.height = pixelHeight;
+		const logicalWidth = mapSize.width * TILE_WIDTH;
+		const logicalHeight = mapSize.height * TILE_HEIGHT;
+
+		const displayWidth = logicalWidth * zoomMap;
+		const displayHeight = logicalHeight * zoomMap;
+
+		if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+			canvas.width = displayWidth;
+			canvas.height = displayHeight;
 		}
 
+		context.imageSmoothingEnabled = false;
 		context.clearRect(0, 0, canvas.width, canvas.height);
+		context.save();
+		context.scale(zoomMap, zoomMap);
 
 		// 1. Draw Map Tiles
 		Object.entries(mapGrid).forEach(([key, tileData]) => {
@@ -156,11 +178,11 @@ export function MapEditor() {
 		context.beginPath();
 		for (let i = 0; i <= mapSize.width; i++) {
 			context.moveTo(i * TILE_WIDTH, 0);
-			context.lineTo(i * TILE_WIDTH, pixelHeight);
+			context.lineTo(i * TILE_WIDTH, logicalHeight);
 		}
 		for (let i = 0; i <= mapSize.height; i++) {
 			context.moveTo(0, i * TILE_HEIGHT);
-			context.lineTo(pixelWidth, i * TILE_HEIGHT);
+			context.lineTo(logicalWidth, i * TILE_HEIGHT);
 		}
 		context.strokeStyle = "rgba(0,0,0, 0.4)";
 		context.lineWidth = 1;
@@ -168,28 +190,32 @@ export function MapEditor() {
 
 		// 3. Draw Selection Marquee
 		if (selection) {
+			const selX = selection.x * TILE_WIDTH;
+			const selY = selection.y * TILE_HEIGHT;
+			const selW = selection.w * TILE_WIDTH;
+			const selH = selection.h * TILE_HEIGHT;
+
+			// Fill
+			context.fillStyle = "rgba(0, 140, 255, 0.2)";
+			context.fillRect(selX, selY, selW, selH);
+
+			// Border
 			context.beginPath();
 			context.strokeStyle = "white";
-			context.lineWidth = 1;
-			context.setLineDash([5, 5]);
-			context.strokeRect(
-				selection.x * TILE_WIDTH,
-				selection.y * TILE_HEIGHT,
-				selection.w * TILE_WIDTH,
-				selection.h * TILE_HEIGHT
-			);
+			context.lineWidth = 2;
+			context.setLineDash([4, 4]);
+			context.strokeRect(selX, selY, selW, selH);
+
 			context.strokeStyle = "black";
-			context.setLineDash([5, 5]);
-			context.lineDashOffset = 5;
-			context.strokeRect(
-				selection.x * TILE_WIDTH,
-				selection.y * TILE_HEIGHT,
-				selection.w * TILE_WIDTH,
-				selection.h * TILE_HEIGHT
-			);
+			context.setLineDash([4, 4]);
+			context.lineDashOffset = 4;
+			context.strokeRect(selX, selY, selW, selH);
+
 			context.setLineDash([]);
 			context.lineDashOffset = 0;
 		}
+
+		context.restore();
 	}
 
 	// Load Image and Init
@@ -221,11 +247,11 @@ export function MapEditor() {
 	// Redraw selection box when paletteSelection changes
 	useEffect(() => {
 		renderPalette();
-	}, [paletteSelection]);
+	}, [paletteSelection, zoomPalette]);
 
 	useEffect(() => {
 		renderMap();
-	}, [mapGrid, selection, mapSize]);
+	}, [mapGrid, selection, mapSize, zoomMap]);
 
 	useEffect(() => {
 		function handleKeyDown(e: KeyboardEvent) {
@@ -327,6 +353,31 @@ export function MapEditor() {
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [mapGrid, selection, clipboard]);
 
+	// Resize Logic
+	useEffect(() => {
+		function handleMouseMove(e: globalThis.MouseEvent) {
+			if (isResizing.current) {
+				// Constrain
+				let newWidth = e.clientX;
+				if (newWidth < 150) newWidth = 150;
+				if (newWidth > 800) newWidth = 800; // sensible max
+				setPaletteWidth(newWidth);
+			}
+		}
+
+		function handleMouseUp() {
+			isResizing.current = false;
+			document.body.style.cursor = "default";
+		}
+
+		window.addEventListener("mousemove", handleMouseMove);
+		window.addEventListener("mouseup", handleMouseUp);
+		return () => {
+			window.removeEventListener("mousemove", handleMouseMove);
+			window.removeEventListener("mouseup", handleMouseUp);
+		};
+	}, []);
+
 	function paintTile(gridX: number, gridY: number, tileId: number | null) {
 		const gx = Math.floor(gridX / TILE_WIDTH);
 		const gy = Math.floor(gridY / TILE_HEIGHT);
@@ -381,14 +432,25 @@ export function MapEditor() {
 		setMapGrid(newGrid);
 	}
 
+	function handleWheel(e: React.WheelEvent, setZoom: React.Dispatch<React.SetStateAction<number>>) {
+		if (e.metaKey || e.ctrlKey) {
+			e.preventDefault();
+			setZoom((z) => {
+				const newZoom = z - e.deltaY * 0.001;
+				// Clamp between 0.25x and 4x
+				return Math.max(0.25, Math.min(4, newZoom));
+			});
+		}
+	}
+
 	function handlePaletteMouseDown(e: MouseEvent<HTMLCanvasElement>) {
 		const canvas = paletteCanvasRef.current;
 		if (!canvas) return;
 
 		isPaletteMouseDown.current = true;
 		const rect = canvas.getBoundingClientRect();
-		const x = e.clientX - rect.left;
-		const y = e.clientY - rect.top;
+		const x = (e.clientX - rect.left) / zoomPalette;
+		const y = (e.clientY - rect.top) / zoomPalette;
 
 		const tileX = Math.floor(x / TILE_WIDTH);
 		const tileY = Math.floor(y / TILE_HEIGHT);
@@ -407,8 +469,8 @@ export function MapEditor() {
 		if (!canvas || !image) return;
 
 		const rect = canvas.getBoundingClientRect();
-		const x = e.clientX - rect.left;
-		const y = e.clientY - rect.top;
+		const x = (e.clientX - rect.left) / zoomPalette;
+		const y = (e.clientY - rect.top) / zoomPalette;
 
 		// Constrain to image bounds
 		const tileX = Math.max(0, Math.min(Math.floor(x / TILE_WIDTH), Math.floor(image.width / TILE_WIDTH) - 1));
@@ -451,8 +513,8 @@ export function MapEditor() {
 		} else {
 			// Hover Logic
 			const rect = canvas.getBoundingClientRect();
-			const x = e.clientX - rect.left;
-			const y = e.clientY - rect.top;
+			const x = (e.clientX - rect.left) / zoomMap;
+			const y = (e.clientY - rect.top) / zoomMap;
 
 			const context = mapContextRef.current;
 			if (!context) return;
@@ -460,9 +522,47 @@ export function MapEditor() {
 			// Re-render to clear old hover
 			renderMap();
 
+			// Draw cursor on top of map (renderMap resets transform, so we need to apply scale again or draw in logical coords)
+			// Wait, renderMap uses context.save/restore. The context is clean here.
+			// We should probably rely on renderMap loop, but simpler to just set scale here too.
+			context.save();
+			context.scale(zoomMap, zoomMap);
+
 			// For hover, let's show the stamp size if using brush
 			const gridX = Math.floor(x / TILE_WIDTH) * TILE_WIDTH;
 			const gridY = Math.floor(y / TILE_HEIGHT) * TILE_HEIGHT;
+
+			// Draw Ghost Tile
+			const image = imageRef.current;
+			if (image && (currentTool === "brush" || currentTool === "fill")) {
+				context.globalAlpha = 0.5;
+
+				// For Brush, render entire stamp. For Fill, render just the top-left (source) tile.
+				const previewW = currentTool === "brush" ? paletteSelection.w : 1;
+				const previewH = currentTool === "brush" ? paletteSelection.h : 1;
+
+				for (let dy = 0; dy < previewH; dy++) {
+					for (let dx = 0; dx < previewW; dx++) {
+						const srcX = (paletteSelection.x + dx) * TILE_WIDTH;
+						const srcY = (paletteSelection.y + dy) * TILE_HEIGHT;
+						const destX = gridX + (dx * TILE_WIDTH);
+						const destY = gridY + (dy * TILE_HEIGHT);
+
+						context.drawImage(
+							image,
+							srcX,
+							srcY,
+							TILE_WIDTH,
+							TILE_HEIGHT,
+							destX,
+							destY,
+							TILE_WIDTH,
+							TILE_HEIGHT
+						);
+					}
+				}
+				context.globalAlpha = 1.0;
+			}
 
 			context.beginPath();
 			context.strokeStyle = "blue";
@@ -497,6 +597,7 @@ export function MapEditor() {
 				context.setLineDash([]);
 				context.lineDashOffset = 0;
 			}
+			context.restore();
 		}
 	}
 
@@ -505,8 +606,8 @@ export function MapEditor() {
 		if (!canvas) return;
 
 		const rect = canvas.getBoundingClientRect();
-		const x = e.clientX - rect.left;
-		const y = e.clientY - rect.top;
+		const x = (e.clientX - rect.left) / zoomMap;
+		const y = (e.clientY - rect.top) / zoomMap;
 
 		const pixelWidth = mapSize.width * TILE_WIDTH;
 		const pixelHeight = mapSize.height * TILE_HEIGHT;
@@ -772,16 +873,20 @@ export function MapEditor() {
 			</div>
 
 			<div className="flex gap-4 items-start flex-1 overflow-hidden">
-				<div className="flex-none w-[280px] flex flex-col h-full">
+				<div
+					className="flex-none flex flex-col h-full"
+					style={{ width: paletteWidth }}
+				>
 					<h3 className="font-bold mb-2">Palette</h3>
 					<div className="border border-gray-400 bg-gray-50 flex-1 overflow-auto">
 						<canvas
 							ref={paletteCanvasRef}
-							className="cursor-pointer block"
+							className="cursor-pointer block origin-top-left"
 							onMouseDown={handlePaletteMouseDown}
 							onMouseMove={handlePaletteMouseMove}
 							onMouseUp={handlePaletteMouseUp}
 							onMouseLeave={handlePaletteMouseUp}
+							onWheel={(e) => handleWheel(e, setZoomPalette)}
 							aria-label="Palette Grid - Use arrow keys to navigate"
 							tabIndex={0}
 						/>
@@ -792,17 +897,27 @@ export function MapEditor() {
 					</div>
 				</div>
 
+				{/* Resizer */}
+				<div
+					className="w-1 cursor-col-resize h-full hover:bg-blue-400 bg-gray-200 flex-none transition-colors"
+					onMouseDown={(e) => {
+						isResizing.current = true;
+						document.body.style.cursor = "col-resize";
+					}}
+				/>
+
 				<div className="flex-1 h-full min-w-0 flex flex-col">
 					<h3 className="font-bold mb-2">Map</h3>
 					<div className="border-2 border-gray-300 bg-gray-100 flex-1 overflow-auto relative rounded">
 						<canvas
 							id="myCanvas"
 							ref={mapCanvasRef}
-							className="block bg-white shadow-sm"
+							className="block bg-white shadow-sm origin-top-left"
 							onMouseDown={handleMapMouseDown}
 							onMouseMove={handleMapMouseMove}
 							onMouseUp={handleMapMouseUp}
 							onMouseLeave={handleMapMouseUp}
+							onWheel={(e) => handleWheel(e, setZoomMap)}
 							aria-label="Map Grid"
 							tabIndex={0}
 						></canvas>

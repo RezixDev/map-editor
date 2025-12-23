@@ -433,7 +433,11 @@ export function MapEditor() {
                 // Unified Paint Logic
                 Object.entries(customBrush.data).forEach(([key, tileData]) => {
                     const [dx, dy] = key.split(",").map(Number);
-                    const targetX = gridX + (dx * TILE_WIDTH);
+
+                    // Mirror the brush layout if flipped
+                    const finalDx = isFlipped ? (customBrush.width - 1 - dx) : dx;
+
+                    const targetX = gridX + (finalDx * TILE_WIDTH);
                     const targetY = gridY + (dy * TILE_HEIGHT);
 
                     if (targetX >= pixelWidth || targetY >= pixelHeight) return;
@@ -708,6 +712,28 @@ export function MapEditor() {
                         onToggleVisibility={(index) => {
                             setLayers(draft => {
                                 draft[index].visible = !draft[index].visible;
+                            });
+                        }}
+                        onOpacityChange={(index, opacity) => {
+                            setLayers(draft => {
+                                draft[index].opacity = opacity;
+                            });
+                        }}
+                        onMoveLayer={(index, direction) => {
+                            setLayers(draft => {
+                                const targetIndex = direction === 'up' ? index + 1 : index - 1;
+                                if (targetIndex < 0 || targetIndex >= draft.length) return;
+
+                                const temp = draft[index];
+                                draft[index] = draft[targetIndex];
+                                draft[targetIndex] = temp;
+
+                                // Update active index if we moved the active layer or swapped with it
+                                if (activeLayerIndex === index) {
+                                    setActiveLayerIndex(targetIndex);
+                                } else if (activeLayerIndex === targetIndex) {
+                                    setActiveLayerIndex(index);
+                                }
                             });
                         }}
                     />

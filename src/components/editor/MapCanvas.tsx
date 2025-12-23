@@ -157,7 +157,11 @@ export function MapCanvas({
                     // Render Custom Brush
                     Object.entries(customBrush.data).forEach(([key, tileData]) => {
                         const [dx, dy] = key.split(",").map(Number);
-                        const drawX = gridX + (dx * TILE_WIDTH);
+
+                        // Mirror ghost layout
+                        const finalDx = isFlipped ? (customBrush.width - 1 - dx) : dx;
+
+                        const drawX = gridX + (finalDx * TILE_WIDTH);
                         const drawY = gridY + (dy * TILE_HEIGHT);
 
                         const tilesPerRow = Math.floor(image.width / TILE_WIDTH);

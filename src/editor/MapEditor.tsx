@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, type MouseEvent } from "react";
+import { useImmer } from "use-immer";
 import spritesheet from "../assets/project.png";
 import { useMapState } from "../hooks/useMapState";
 import { type TileData, type Tool, type SelectionRect } from "../types";
@@ -6,6 +7,7 @@ import { TILE_WIDTH, TILE_HEIGHT } from "../constants";
 import { LayerPanel } from "../components/editor/LayerPanel";
 import { Toolbar } from "../components/editor/Toolbar";
 import { Palette } from "../components/editor/Palette";
+import { RecentTiles } from "../components/editor/RecentTiles";
 import { MapCanvas } from "../components/editor/MapCanvas";
 
 export function MapEditor() {
@@ -29,11 +31,31 @@ export function MapEditor() {
     const [currentTool, setCurrentTool] = useState<Tool>("brush");
     const [selection, setSelection] = useState<SelectionRect | null>(null);
     const [clipboard, setClipboard] = useState<Record<string, TileData> | null>(null);
+    const [recentStamps, setRecentStamps] = useImmer<SelectionRect[]>([]);
 
     const isMouseDown = useRef(false);
     const isResizing = useRef(false);
     const lastPaintedTiles = useRef<Set<string>>(new Set());
     const selectionStart = useRef<{ x: number; y: number } | null>(null);
+
+
+    function addRecentStamp(stamp: SelectionRect) {
+        setRecentStamps(draft => {
+            // Remove exact duplicate
+            const index = draft.findIndex(s =>
+                s.x === stamp.x && s.y === stamp.y && s.w === stamp.w && s.h === stamp.h
+            );
+            if (index !== -1) {
+                draft.splice(index, 1);
+            }
+            // Add to front
+            draft.unshift(stamp);
+            // Limit to 10
+            if (draft.length > 10) {
+                draft.pop();
+            }
+        });
+    }
 
     // Load Image and Init
     useEffect(() => {
@@ -67,7 +89,12 @@ export function MapEditor() {
                     if (e.key === "ArrowRight") x = Math.min(maxW, x + 1);
                     if (e.key === "ArrowUp") y = Math.max(0, y - 1);
                     if (e.key === "ArrowDown") y = Math.min(maxH, y + 1);
-                    return { ...prev, x, y };
+
+                    // Add to recent
+                    const newSel = { ...prev, x, y };
+                    addRecentStamp(newSel);
+
+                    return newSel;
                 });
                 setCurrentTool("brush");
             }
@@ -259,7 +286,10 @@ export function MapEditor() {
                     paintTile(targetX, targetY, tileId);
                 }
             }
+
             lastPaintedTiles.current.add(tileKey);
+            // Add current palette selection to history on paint
+            addRecentStamp(paletteSelection);
         } else if (currentTool === "eraser") {
             paintTile(gridX, gridY, null);
             lastPaintedTiles.current.add(tileKey);
@@ -402,6 +432,17 @@ export function MapEditor() {
                 onLoad={handleLoadMap}
                 onExport={handleExportPng}
                 onUploadImage={handleUploadImage}
+            />
+
+            <RecentTiles
+                recentStamps={recentStamps}
+                onSelect={(stamp) => {
+                    setPaletteSelection(stamp);
+                    setCurrentTool("brush");
+                    addRecentStamp(stamp);
+                }}
+                image={image}
+                activeStamp={paletteSelection}
             />
 
             <div className="flex gap-4 items-start flex-1 overflow-hidden">

@@ -1,0 +1,96 @@
+import { useRef, useEffect } from "react";
+import { type SelectionRect } from "../../types";
+import { TILE_WIDTH, TILE_HEIGHT } from "../../constants";
+
+type RecentTilesProps = {
+    recentStamps: SelectionRect[];
+    onSelect: (stamp: SelectionRect) => void;
+    image: HTMLImageElement | null;
+    activeStamp: SelectionRect;
+};
+
+export function RecentTiles({ recentStamps, onSelect, image, activeStamp }: RecentTilesProps) {
+    return (
+        <div className="flex gap-2 p-2 bg-gray-50 border-b overflow-x-auto h-12 items-center">
+            <span className="text-xs font-bold text-gray-500 mr-2 flex-none">History:</span>
+            {recentStamps.map((stamp, i) => (
+                <TilePreview
+                    key={i}
+                    stamp={stamp}
+                    image={image}
+                    onClick={() => onSelect(stamp)}
+                    isActive={
+                        activeStamp.x === stamp.x &&
+                        activeStamp.y === stamp.y &&
+                        activeStamp.w === stamp.w &&
+                        activeStamp.h === stamp.h
+                    }
+                />
+            ))}
+            {recentStamps.length === 0 && (
+                <span className="text-xs text-gray-400 italic">Select stamps to see history...</span>
+            )}
+        </div>
+    );
+}
+
+function TilePreview({
+    stamp,
+    image,
+    onClick,
+    isActive,
+}: {
+    stamp: SelectionRect;
+    image: HTMLImageElement | null;
+    onClick: () => void;
+    isActive: boolean;
+}) {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext("2d");
+        if (!canvas || !ctx || !image) return;
+
+        // Scale down if large
+        const stampW = stamp.w * TILE_WIDTH;
+        const stampH = stamp.h * TILE_HEIGHT;
+
+        // Fit to 32x32 max
+        const scale = Math.min(32 / stampW, 32 / stampH);
+
+        ctx.clearRect(0, 0, 32, 32);
+        ctx.imageSmoothingEnabled = false;
+
+        const drawW = stampW * scale;
+        const drawH = stampH * scale;
+
+        // Center
+        const offsetX = (32 - drawW) / 2;
+        const offsetY = (32 - drawH) / 2;
+
+        ctx.drawImage(
+            image,
+            stamp.x * TILE_WIDTH,
+            stamp.y * TILE_HEIGHT,
+            stampW,
+            stampH,
+            offsetX,
+            offsetY,
+            drawW,
+            drawH
+        );
+
+    }, [stamp, image]);
+
+    return (
+        <div
+            onClick={onClick}
+            className={`w-8 h-8 border rounded flex-none cursor-pointer hover:border-blue-400 bg-white ${isActive ? "border-blue-600 ring-1 ring-blue-600" : "border-gray-300"
+                }`}
+            title={`Stamp ${stamp.x},${stamp.y} (${stamp.w}x${stamp.h})`}
+        >
+            <canvas ref={canvasRef} width={32} height={32} className="w-full h-full" />
+        </div>
+    );
+}

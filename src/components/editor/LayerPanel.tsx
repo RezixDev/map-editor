@@ -50,7 +50,7 @@ export function LayerPanel({
                                     }}
                                     title="Move Up"
                                 >
-                                    ↑
+                                    ↓
                                 </button>
                                 <button
                                     className="px-1 text-xs bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-30"
@@ -61,7 +61,7 @@ export function LayerPanel({
                                     }}
                                     title="Move Down"
                                 >
-                                    ↓
+                                    ↑
                                 </button>
                             </div>
                         </div>

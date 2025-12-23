@@ -399,17 +399,15 @@ export function MapEditor() {
                 const srcX = (tileData.tileId % tilesPerRow) * TILE_WIDTH;
                 const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
 
-                ctx.drawImage(
-                    image,
-                    srcX,
-                    srcY,
-                    TILE_WIDTH,
-                    TILE_HEIGHT,
-                    drawX,
-                    drawY,
-                    TILE_WIDTH,
-                    TILE_HEIGHT
-                );
+                ctx.save();
+                if (tileData.flipX) {
+                    ctx.translate(drawX + TILE_WIDTH, drawY);
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
+                } else {
+                    ctx.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, drawX, drawY, TILE_WIDTH, TILE_HEIGHT);
+                }
+                ctx.restore();
             });
         });
 

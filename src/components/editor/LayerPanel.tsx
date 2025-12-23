@@ -4,6 +4,7 @@ type LayerPanelProps = {
     layers: Layer[];
     activeLayerIndex: number;
     setActiveLayerIndex: (index: number) => void;
+    onToggleVisibility: (index: number) => void;
     onOpacityChange: (index: number, opacity: number) => void;
     onMoveLayer: (index: number, direction: 'up' | 'down') => void;
 };

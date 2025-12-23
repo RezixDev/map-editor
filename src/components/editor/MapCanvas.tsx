@@ -216,8 +216,8 @@ export function MapCanvas({
                 context.strokeRect(gridX, gridY, drawW, drawH);
                 context.setLineDash([]);
                 context.lineDashOffset = 0;
-            } else {
-                // Single tile hover (Eraser, Fill, etc)
+            } else if (currentTool === "eraser" || currentTool === "fill") {
+                // Single tile hover (Eraser, Fill)
                 context.beginPath();
                 context.strokeStyle = "white";
                 context.lineWidth = 1;
@@ -279,6 +279,20 @@ export function MapCanvas({
                     width: mapSize.width * TILE_WIDTH * zoom,
                     height: mapSize.height * TILE_HEIGHT * zoom,
                     imageRendering: "pixelated",
+                    cursor: ((): string => {
+                        switch (currentTool) {
+                            case "brush":
+                            case "eraser":
+                            case "fill":
+                                return "none"; // We render our own cursor
+                            case "eyedropper":
+                                return "crosshair";
+                            case "marquee":
+                                return "crosshair"; // Standard selection cursor
+                            default:
+                                return "default";
+                        }
+                    })()
                 }}
                 onMouseDown={onMouseDown}
                 onMouseMove={handleInternalMouseMove}

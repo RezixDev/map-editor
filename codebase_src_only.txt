@@ -1,5 +1,5 @@
 # Codebase Export: /src folder
-Generated on: Tue Dec 23 14:28:43 CET 2025
+Generated on: Tue Dec 23 20:04:02 CET 2025
 ------------------------------------------------
 ## Project Structure (/src)
 ```
@@ -22,6 +22,7 @@ src
  |-- assets
  | |-- PathAndObjects.png
  | |-- project.png
+ | |-- project_old.png
  | |-- TileSet.png
  |-- editor
  | |-- MapEditor.tsx
@@ -76,8 +77,14 @@ createRoot(document.getElementById('root')!).render(
 ```ts
 export type TileData = { tileId: number; flipX: boolean };
 export type Layer = { id: string; name: string; visible: boolean; opacity: number; data: Record<string, TileData> };
-export type Tool = "brush" | "eraser" | "fill" | "marquee";
+export type Tool = "brush" | "eraser" | "fill" | "marquee" | "eyedropper";
 export type SelectionRect = { x: number; y: number; w: number; h: number };
+
+export type CustomBrush = {
+    width: number;
+    height: number;
+    data: Record<string, TileData>;
+};
 
 ```
 
@@ -333,6 +340,13 @@ export function Toolbar({
                 >
                     Marquee
                 </button>
+                <button
+                    className={`px-3 py-1 rounded text-sm ${currentTool === "eyedropper" ? "bg-blue-600 text-white" : "bg-white text-gray-700"}`}
+                    onClick={() => setCurrentTool("eyedropper")}
+                    title="Shortcut: I (Alt+Click to quick-pick)"
+                >
+                    Eyedropper
+                </button>
             </div>
 
             <div className="flex gap-2 p-2 bg-gray-100 rounded border border-gray-300">
@@ -405,7 +419,7 @@ export function LayerPanel({ layers, activeLayerIndex, setActiveLayerIndex, onTo
 ### File: src/components/editor/MapCanvas.tsx
 ```tsx
 import { useRef, useEffect, type MouseEvent } from "react";
-import { type Layer, type SelectionRect, type Tool } from "../../types";
+import { type Layer, type SelectionRect, type Tool, type CustomBrush } from "../../types";
 import { TILE_WIDTH, TILE_HEIGHT } from "../../constants";
 
 type MapCanvasProps = {
@@ -418,6 +432,8 @@ type MapCanvasProps = {
     currentTool: Tool;
     paletteSelection: SelectionRect;
     isFlipped: boolean;
+    customBrush: CustomBrush | null;
+    cameraOffset: { x: number; y: number };
     onMouseDown: (e: MouseEvent<HTMLCanvasElement>) => void;
     onMouseMove: (e: MouseEvent<HTMLCanvasElement>) => void;
     onMouseUp: () => void;
@@ -431,9 +447,12 @@ export function MapCanvas({
     setZoom,
     selection,
     image,
+
     currentTool,
     paletteSelection,
     isFlipped,
+    customBrush,
+    cameraOffset,
     onMouseDown,
     onMouseMove,
     onMouseUp,
@@ -461,6 +480,9 @@ export function MapCanvas({
         context.clearRect(0, 0, canvas.width, canvas.height);
 
         // 1. Draw Map Tiles (Layered)
+        context.save();
+        context.translate(cameraOffset.x, cameraOffset.y);
+
         layers.forEach((layer) => {
             if (!layer.visible) return;
 
@@ -489,8 +511,11 @@ export function MapCanvas({
 
             context.restore();
         });
+        context.restore();
 
-        // 2. Draw Grid
+        // 2. Draw Grid (with offset)
+        context.save();
+        context.translate(cameraOffset.x, cameraOffset.y);
         context.beginPath();
         for (let i = 0; i <= mapSize.width; i++) {
             context.moveTo(i * TILE_WIDTH, 0);
@@ -503,9 +528,12 @@ export function MapCanvas({
         context.strokeStyle = "rgba(0,0,0, 0.4)";
         context.lineWidth = 1;
         context.stroke();
+        context.restore();
 
-        // 3. Draw Selection Marquee
+        // 3. Draw Selection Marquee (with offset)
         if (selection) {
+            context.save();
+            context.translate(cameraOffset.x, cameraOffset.y);
             const selX = selection.x * TILE_WIDTH;
             const selY = selection.y * TILE_HEIGHT;
             const selW = selection.w * TILE_WIDTH;
@@ -529,37 +557,71 @@ export function MapCanvas({
 
             context.setLineDash([]);
             context.lineDashOffset = 0;
+            context.restore();
         }
 
         // 4. Draw Ghost/Hover Cursor
         if (mousePosRef.current) {
-            const gridX = Math.floor(mousePosRef.current.x / TILE_WIDTH) * TILE_WIDTH;
-            const gridY = Math.floor(mousePosRef.current.y / TILE_HEIGHT) * TILE_HEIGHT;
+            // Apply offset to ghost rendering
+            context.save();
+            context.translate(cameraOffset.x, cameraOffset.y);
+
+            const gridX = Math.floor((mousePosRef.current.x - cameraOffset.x) / TILE_WIDTH) * TILE_WIDTH;
+            const gridY = Math.floor((mousePosRef.current.y - cameraOffset.y) / TILE_HEIGHT) * TILE_HEIGHT;
 
             // Draw Ghost Tile
             if (currentTool === "brush" || currentTool === "fill") {
                 context.globalAlpha = 0.5;
 
-                const previewW = currentTool === "brush" ? paletteSelection.w : 1;
-                const previewH = currentTool === "brush" ? paletteSelection.h : 1;
+                if (customBrush && currentTool === "brush") {
+                    // Render Custom Brush
+                    Object.entries(customBrush.data).forEach(([key, tileData]) => {
+                        const [dx, dy] = key.split(",").map(Number);
+                        const drawX = gridX + (dx * TILE_WIDTH);
+                        const drawY = gridY + (dy * TILE_HEIGHT);
 
-                for (let dy = 0; dy < previewH; dy++) {
-                    for (let dx = 0; dx < previewW; dx++) {
-                        const srcDx = isFlipped ? (previewW - 1 - dx) : dx;
-                        const srcX = (paletteSelection.x + srcDx) * TILE_WIDTH;
-                        const srcY = (paletteSelection.y + dy) * TILE_HEIGHT;
-                        const destX = gridX + (dx * TILE_WIDTH);
-                        const destY = gridY + (dy * TILE_HEIGHT);
+                        const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+                        const srcX = (tileData.tileId % tilesPerRow) * TILE_WIDTH;
+                        const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
 
                         context.save();
-                        if (isFlipped) {
-                            context.translate(destX + TILE_WIDTH, destY);
+                        // Match paint logic: Use the tile's own flip state, ignoring global isFlipped for now
+                        // to ensure perfect WYSIWYG with the paint operation.
+                        if (tileData.flipX) {
+                            context.translate(drawX + TILE_WIDTH, drawY);
                             context.scale(-1, 1);
+                            // Note: We are flipping the TILE image, but not the brush layout here.
+                            // Implementing fullbrush flip requires transforming dx/dy.
+                            // For MVP, we flip tiles in place.
                             context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
                         } else {
-                            context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, destX, destY, TILE_WIDTH, TILE_HEIGHT);
+                            context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, drawX, drawY, TILE_WIDTH, TILE_HEIGHT);
                         }
                         context.restore();
+                    });
+                } else {
+                    // Render Standard Palette Brush
+                    const previewW = currentTool === "brush" ? paletteSelection.w : 1;
+                    const previewH = currentTool === "brush" ? paletteSelection.h : 1;
+
+                    for (let dy = 0; dy < previewH; dy++) {
+                        for (let dx = 0; dx < previewW; dx++) {
+                            const srcDx = isFlipped ? (previewW - 1 - dx) : dx;
+                            const srcX = (paletteSelection.x + srcDx) * TILE_WIDTH;
+                            const srcY = (paletteSelection.y + dy) * TILE_HEIGHT;
+                            const destX = gridX + (dx * TILE_WIDTH);
+                            const destY = gridY + (dy * TILE_HEIGHT);
+
+                            context.save();
+                            if (isFlipped) {
+                                context.translate(destX + TILE_WIDTH, destY);
+                                context.scale(-1, 1);
+                                context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
+                            } else {
+                                context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, destX, destY, TILE_WIDTH, TILE_HEIGHT);
+                            }
+                            context.restore();
+                        }
                     }
                 }
                 context.globalAlpha = 1.0;
@@ -595,6 +657,7 @@ export function MapCanvas({
                 context.setLineDash([]);
                 context.lineDashOffset = 0;
             }
+            context.restore();
         }
     }
 
@@ -607,7 +670,7 @@ export function MapCanvas({
         return () => {
             if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current);
         };
-    }, [layers, selection, mapSize, zoom, image, paletteSelection, currentTool, isFlipped]);
+    }, [layers, selection, mapSize, zoom, image, paletteSelection, currentTool, isFlipped, cameraOffset, customBrush]);
 
     function handleInternalMouseMove(e: MouseEvent<HTMLCanvasElement>) {
         // Calculate hover pos
@@ -773,7 +836,7 @@ export const TILE_HEIGHT = 32;
 ```ts
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useImmer } from "use-immer";
-import { type Layer } from "../types";
+import { type Layer, type SelectionRect } from "../types";
 
 const STORAGE_KEY = "tile_craft_editor_v1";
 
@@ -791,6 +854,7 @@ const INITIAL_MAP_SIZE = { width: 64, height: 16 };
 export function useMapState() {
     const [layers, setLayers] = useImmer<Layer[]>(INITIAL_LAYERS);
     const [mapSize, setMapSize] = useState(INITIAL_MAP_SIZE);
+    const [recentStamps, setRecentStamps] = useImmer<SelectionRect[]>([]);
 
     // History Stacks
     const historyPast = useRef<Layer[][]>([]);
@@ -808,6 +872,9 @@ export function useMapState() {
                 if (data && Array.isArray(data.layers) && data.mapSize) {
                     setLayers(data.layers);
                     setMapSize(data.mapSize);
+                    if (data.recentStamps) {
+                        setRecentStamps(data.recentStamps);
+                    }
                 } else if (Array.isArray(data)) {
                     // Legacy fallback if just layers were saved
                     setLayers(data);
@@ -818,7 +885,7 @@ export function useMapState() {
         } finally {
             isHydrated.current = true;
         }
-    }, [setLayers]);
+    }, [setLayers, setRecentStamps]);
 
     // Persistence
     useEffect(() => {
@@ -832,7 +899,8 @@ export function useMapState() {
             try {
                 const state = {
                     layers,
-                    mapSize
+                    mapSize,
+                    recentStamps
                 };
                 const json = JSON.stringify(state);
 
@@ -850,7 +918,25 @@ export function useMapState() {
         return () => {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         };
-    }, [layers, mapSize]);
+    }, [layers, mapSize, recentStamps]);
+
+    const addRecentStamp = useCallback((stamp: SelectionRect) => {
+        setRecentStamps(draft => {
+            // Remove exact duplicate
+            const index = draft.findIndex(s =>
+                s.x === stamp.x && s.y === stamp.y && s.w === stamp.w && s.h === stamp.h
+            );
+            if (index !== -1) {
+                draft.splice(index, 1);
+            }
+            // Add to front
+            draft.unshift(stamp);
+            // Limit to 10
+            if (draft.length > 10) {
+                draft.pop();
+            }
+        });
+    }, [setRecentStamps]);
 
     // Checkpoint
     const saveCheckpoint = useCallback(() => {
@@ -888,6 +974,9 @@ export function useMapState() {
         setLayers,
         mapSize,
         setMapSize,
+
+        recentStamps,
+        addRecentStamp,
         saveCheckpoint,
         performUndo,
         performRedo,
@@ -900,10 +989,9 @@ export function useMapState() {
 ### File: src/editor/MapEditor.tsx
 ```tsx
 import { useRef, useState, useEffect, type MouseEvent } from "react";
-import { useImmer } from "use-immer";
 import spritesheet from "../assets/project.png";
 import { useMapState } from "../hooks/useMapState";
-import { type TileData, type Tool, type SelectionRect } from "../types";
+import { type TileData, type Tool, type SelectionRect, type CustomBrush } from "../types";
 import { TILE_WIDTH, TILE_HEIGHT } from "../constants";
 import { LayerPanel } from "../components/editor/LayerPanel";
 import { Toolbar } from "../components/editor/Toolbar";
@@ -919,43 +1007,134 @@ export function MapEditor() {
         setMapSize,
         saveCheckpoint,
         performUndo,
-        performRedo
+
+        performRedo,
+        recentStamps,
+        addRecentStamp
     } = useMapState();
 
     const [image, setImage] = useState<HTMLImageElement | null>(null);
     const [paletteWidth, setPaletteWidth] = useState(280);
     const [zoomMap, setZoomMap] = useState(1);
     const [zoomPalette, setZoomPalette] = useState(1);
+    const [cameraOffset, setCameraOffset] = useState({ x: 0, y: 0 });
     const [isFlipped, setIsFlipped] = useState(false);
     const [paletteSelection, setPaletteSelection] = useState<SelectionRect>({ x: 0, y: 0, w: 1, h: 1 });
     const [activeLayerIndex, setActiveLayerIndex] = useState(0);
     const [currentTool, setCurrentTool] = useState<Tool>("brush");
     const [selection, setSelection] = useState<SelectionRect | null>(null);
+
     const [clipboard, setClipboard] = useState<Record<string, TileData> | null>(null);
-    const [recentStamps, setRecentStamps] = useImmer<SelectionRect[]>([]);
+    const [customBrush, setCustomBrush] = useState<CustomBrush | null>(null);
+
 
     const isMouseDown = useRef(false);
+    const isPanning = useRef(false);
+    const isSpacePressed = useRef(false);
     const isResizing = useRef(false);
     const lastPaintedTiles = useRef<Set<string>>(new Set());
     const selectionStart = useRef<{ x: number; y: number } | null>(null);
 
 
-    function addRecentStamp(stamp: SelectionRect) {
-        setRecentStamps(draft => {
-            // Remove exact duplicate
-            const index = draft.findIndex(s =>
-                s.x === stamp.x && s.y === stamp.y && s.w === stamp.w && s.h === stamp.h
-            );
-            if (index !== -1) {
-                draft.splice(index, 1);
+
+
+    function sampleArea(area: { x: number, y: number, w: number, h: number }) {
+        if (!image) return;
+
+        const brushData: Record<string, TileData> = {};
+        let foundTiles = false;
+        let minX = Infinity;
+        let minY = Infinity;
+
+        // 1. Capture Data
+        for (let dy = 0; dy < area.h; dy++) {
+            for (let dx = 0; dx < area.w; dx++) {
+                const mapX = area.x + dx;
+                const mapY = area.y + dy;
+                const key = `${mapX},${mapY}`;
+
+                let tile = layers[activeLayerIndex].data[key];
+                if (!tile) {
+                    for (let i = layers.length - 1; i >= 0; i--) {
+                        if (!layers[i].visible) continue;
+                        if (layers[i].data[key]) {
+                            tile = layers[i].data[key];
+                            break;
+                        }
+                    }
+                }
+
+                if (tile) {
+                    brushData[`${dx},${dy}`] = tile;
+                    foundTiles = true;
+                    if (dx < minX) minX = dx;
+                    if (dy < minY) minY = dy;
+                }
             }
-            // Add to front
-            draft.unshift(stamp);
-            // Limit to 10
-            if (draft.length > 10) {
-                draft.pop();
+        }
+
+        if (foundTiles) {
+            // Trim empty space from top-left (smart anchor)
+            const trimmedData: Record<string, TileData> = {};
+            let maxWidth = 0;
+            let maxHeight = 0;
+
+            Object.entries(brushData).forEach(([key, tile]) => {
+                const [dx, dy] = key.split(",").map(Number);
+                const newX = dx - minX;
+                const newY = dy - minY;
+                trimmedData[`${newX},${newY}`] = tile;
+                if (newX >= maxWidth) maxWidth = newX;
+                if (newY >= maxHeight) maxHeight = newY;
+            });
+
+            const newBrush: CustomBrush = {
+                width: maxWidth + 1,
+                height: maxHeight + 1,
+                data: trimmedData
+            };
+
+            setCustomBrush(newBrush);
+            setCurrentTool("brush");
+            setSelection(null);
+
+            // Retroactive History Support
+            // Try to see if this matches a contiguous spritesheet rect for the palette/history
+            // If complex/scattered, we skip adding to history for now.
+            const firstTile = Object.values(trimmedData)[0];
+            if (firstTile) {
+                // Check if *all* tiles align contiguously on spritesheet relative to the first
+                const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+                const firstId = firstTile.tileId;
+                const startSrcX = firstId % tilesPerRow;
+                const startSrcY = Math.floor(firstId / tilesPerRow);
+
+                let isContiguous = true;
+                for (let y = 0; y < newBrush.height; y++) {
+                    for (let x = 0; x < newBrush.width; x++) {
+                        const t = trimmedData[`${x},${y}`];
+                        if (!t) continue; // Gaps are allowed in custom brush, but might break rect check if strictly rect
+
+                        const expectedId = (startSrcY + y) * tilesPerRow + (startSrcX + x);
+                        if (t.tileId !== expectedId) {
+                            isContiguous = false;
+                            break;
+                        }
+                    }
+                    if (!isContiguous) break;
+                }
+
+                if (isContiguous) {
+                    const newSel = { x: startSrcX, y: startSrcY, w: newBrush.width, h: newBrush.height };
+                    setPaletteSelection(newSel);
+                    addRecentStamp(newSel);
+                } else {
+                    // Clear palette selection to indicate custom brush
+                    setPaletteSelection({ x: 0, y: 0, w: 0, h: 0 }); // Or some indicator
+                }
             }
-        });
+
+        }
     }
 
     // Load Image and Init
@@ -973,6 +1152,20 @@ export function MapEditor() {
         function handleKeyDown(e: KeyboardEvent) {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
+            if (e.code === "Space") {
+                e.preventDefault();
+                isSpacePressed.current = true;
+                document.body.style.cursor = "grab";
+                return;
+            }
+
+            if (e.key.toLowerCase() === "i") {
+                if (selection) {
+                    sampleArea(selection);
+                } else {
+                    setCurrentTool("eyedropper");
+                }
+            }
             if (e.key.toLowerCase() === "b") setCurrentTool("brush");
             if (e.key.toLowerCase() === "e") setCurrentTool("eraser");
             if (e.key.toLowerCase() === "g" || e.key.toLowerCase() === "f") setCurrentTool("fill");
@@ -1072,8 +1265,20 @@ export function MapEditor() {
             }
         }
 
+        function handleKeyUp(e: KeyboardEvent) {
+            if (e.code === "Space") {
+                isSpacePressed.current = false;
+                isPanning.current = false;
+                document.body.style.cursor = "default";
+            }
+        }
+
         window.addEventListener("keydown", handleKeyDown);
-        return () => window.removeEventListener("keydown", handleKeyDown);
+        window.addEventListener("keyup", handleKeyUp);
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+            window.removeEventListener("keyup", handleKeyUp);
+        };
     }, [layers, selection, clipboard, activeLayerIndex, isFlipped, image]);
 
     // Resize Logic
@@ -1100,7 +1305,7 @@ export function MapEditor() {
         };
     }, []);
 
-    function paintTile(gridX: number, gridY: number, tileId: number | null) {
+    function paintTile(gridX: number, gridY: number, tileId: number | null, flipX?: boolean) {
         const gx = Math.floor(gridX / TILE_WIDTH);
         const gy = Math.floor(gridY / TILE_HEIGHT);
         const key = `${gx},${gy}`;
@@ -1110,7 +1315,7 @@ export function MapEditor() {
             if (tileId === null) {
                 delete activeData[key];
             } else {
-                activeData[key] = { tileId, flipX: isFlipped };
+                activeData[key] = { tileId, flipX: flipX !== undefined ? flipX : isFlipped };
             }
         });
     }
@@ -1150,9 +1355,12 @@ export function MapEditor() {
     }
 
     function handleMapInteraction(e: MouseEvent<HTMLCanvasElement>) {
+        if (isPanning.current) return;
+
         // e.nativeEvent.offsetX is relative to the canvas
-        const x = e.nativeEvent.offsetX / zoomMap;
-        const y = e.nativeEvent.offsetY / zoomMap;
+        // Account for Zoom AND Camera Offset
+        const x = (e.nativeEvent.offsetX / zoomMap) - cameraOffset.x;
+        const y = (e.nativeEvent.offsetY / zoomMap) - cameraOffset.y;
 
         const pixelWidth = mapSize.width * TILE_WIDTH;
         const pixelHeight = mapSize.height * TILE_HEIGHT;
@@ -1172,32 +1380,56 @@ export function MapEditor() {
         const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
 
         if (currentTool === "brush") {
-            for (let dy = 0; dy < paletteSelection.h; dy++) {
-                for (let dx = 0; dx < paletteSelection.w; dx++) {
-                    const srcDx = isFlipped ? (paletteSelection.w - 1 - dx) : dx;
-                    const px = paletteSelection.x + srcDx;
-                    const py = paletteSelection.y + dy;
-                    const tileId = py * tilesPerRow + px;
-
+            if (customBrush) {
+                // Use independent Custom Brush
+                Object.entries(customBrush.data).forEach(([key, tileData]) => {
+                    const [dx, dy] = key.split(",").map(Number);
                     const targetX = gridX + (dx * TILE_WIDTH);
                     const targetY = gridY + (dy * TILE_HEIGHT);
 
-                    if (targetX >= pixelWidth || targetY >= pixelHeight) continue;
+                    if (targetX >= pixelWidth || targetY >= pixelHeight) return;
 
-                    paintTile(targetX, targetY, tileId);
+                    // Respect Flip (Applying global flip to the whole stamp could be complex, 
+                    // simpliest is to flip each tile if isFlipped is on, OR flip the coordinate lookup.
+                    // For now, let's just pass the tileData as is, maybe simple tile flip).
+                    // Ideally we should transform the brush coordinates if isFlipped is true.
+
+                    // Pass the source tile's flip state explicitly
+                    // If we want to support global flipping of the stamp later, we'd XOR this with isFlipped
+                    paintTile(targetX, targetY, tileData.tileId, tileData.flipX);
+                });
+
+            } else {
+                // Standard Palette Brush
+                for (let dy = 0; dy < paletteSelection.h; dy++) {
+                    for (let dx = 0; dx < paletteSelection.w; dx++) {
+                        const srcDx = isFlipped ? (paletteSelection.w - 1 - dx) : dx;
+                        const px = paletteSelection.x + srcDx;
+                        const py = paletteSelection.y + dy;
+                        const tileId = py * tilesPerRow + px;
+
+                        const targetX = gridX + (dx * TILE_WIDTH);
+                        const targetY = gridY + (dy * TILE_HEIGHT);
+
+                        if (targetX >= pixelWidth || targetY >= pixelHeight) continue;
+
+                        paintTile(targetX, targetY, tileId);
+                    }
                 }
             }
 
             lastPaintedTiles.current.add(tileKey);
-            // Add current palette selection to history on paint
-            addRecentStamp(paletteSelection);
+            // Add current palette selection to history on paint (only if standard brush)
+            if (!customBrush) {
+                addRecentStamp(paletteSelection);
+            }
         } else if (currentTool === "eraser") {
             paintTile(gridX, gridY, null);
             lastPaintedTiles.current.add(tileKey);
         } else if (currentTool === "fill" && e.type === "mousedown") {
             const fillTileId = paletteSelection.y * tilesPerRow + paletteSelection.x;
             floodFill(gx, gy, fillTileId);
-        } else if (currentTool === "marquee") {
+        } else if (currentTool === "marquee" || currentTool === "eyedropper") {
             if (e.type === "mousedown") {
                 selectionStart.current = { x: gx, y: gy };
                 setSelection({ x: gx, y: gy, w: 1, h: 1 });
@@ -1213,7 +1445,26 @@ export function MapEditor() {
     }
 
     function handleMapMouseDown(e: MouseEvent<HTMLCanvasElement>) {
-        if (currentTool !== "marquee") {
+        if (isSpacePressed.current) {
+            isPanning.current = true;
+            document.body.style.cursor = "grabbing";
+            return;
+        }
+
+        // Eyedropper Logic
+        // Alt-click to quick pick single tile (Legacy/Power User)
+        if (e.altKey) {
+            if (!image) return;
+            const x = (e.nativeEvent.offsetX / zoomMap) - cameraOffset.x;
+            const y = (e.nativeEvent.offsetY / zoomMap) - cameraOffset.y;
+            const gx = Math.floor(x / TILE_WIDTH);
+            const gy = Math.floor(y / TILE_HEIGHT);
+
+            sampleArea({ x: gx, y: gy, w: 1, h: 1 });
+            return;
+        }
+
+        if (currentTool !== "marquee" && currentTool !== "eyedropper") {
             saveCheckpoint();
         }
         isMouseDown.current = true;
@@ -1222,14 +1473,32 @@ export function MapEditor() {
     }
 
     function handleMapMouseMove(e: MouseEvent<HTMLCanvasElement>) {
+        if (isPanning.current) {
+            setCameraOffset(prev => ({
+                x: prev.x + e.movementX / zoomMap,
+                y: prev.y + e.movementY / zoomMap
+            }));
+            return;
+        }
+
         if (isMouseDown.current) {
             handleMapInteraction(e);
         }
     }
 
     function handleMapMouseUp() {
+        if (isPanning.current) {
+            isPanning.current = false;
+            document.body.style.cursor = isSpacePressed.current ? "grab" : "default";
+            return;
+        }
+
         isMouseDown.current = false;
         lastPaintedTiles.current.clear();
+
+        if (currentTool === "eyedropper" && selection) {
+            sampleArea(selection);
+        }
     }
 
     function handleUploadImage(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1358,7 +1627,11 @@ export function MapEditor() {
                         zoom={zoomPalette}
                         setZoom={setZoomPalette}
                         isFlipped={isFlipped}
-                        onToolChange={() => setCurrentTool("brush")}
+                        onToolChange={() => {
+                            setCurrentTool("brush");
+                            // If picking from palette, we clear custom brush to revert to standard mode
+                            setCustomBrush(null);
+                        }}
                     />
                 </div>
 
@@ -1375,13 +1648,16 @@ export function MapEditor() {
                     <MapCanvas
                         layers={layers}
                         mapSize={mapSize}
+
                         zoom={zoomMap}
                         setZoom={setZoomMap}
+                        cameraOffset={cameraOffset}
                         selection={selection}
                         image={image}
                         currentTool={currentTool}
                         paletteSelection={paletteSelection}
                         isFlipped={isFlipped}
+                        customBrush={customBrush}
                         onMouseDown={handleMapMouseDown}
                         onMouseMove={handleMapMouseMove}
                         onMouseUp={handleMapMouseUp}

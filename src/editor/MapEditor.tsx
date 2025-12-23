@@ -48,6 +48,29 @@ export function MapEditor() {
 
 
 
+    function updatePaletteSelection(newSelection: SelectionRect) {
+        setPaletteSelection(newSelection);
+
+        if (!image) return;
+        const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+        const brushData: Record<string, TileData> = {};
+
+        for (let dy = 0; dy < newSelection.h; dy++) {
+            for (let dx = 0; dx < newSelection.w; dx++) {
+                const srcX = newSelection.x + dx;
+                const srcY = newSelection.y + dy;
+                const tileId = srcY * tilesPerRow + srcX;
+                brushData[`${dx},${dy}`] = { tileId, flipX: false };
+            }
+        }
+
+        setCustomBrush({
+            width: newSelection.w,
+            height: newSelection.h,
+            data: brushData
+        });
+    }
+
     function sampleArea(area: { x: number, y: number, w: number, h: number }) {
         if (!image) return;
 
@@ -184,7 +207,6 @@ export function MapEditor() {
             if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
                 e.preventDefault();
                 setPaletteSelection(prev => {
-
                     if (!image) return prev;
                     let { x, y } = prev;
                     const maxW = Math.floor(image.width / TILE_WIDTH) - 1;
@@ -194,9 +216,26 @@ export function MapEditor() {
                     if (e.key === "ArrowUp") y = Math.max(0, y - 1);
                     if (e.key === "ArrowDown") y = Math.min(maxH, y + 1);
 
-                    // Add to recent
                     const newSel = { ...prev, x, y };
                     addRecentStamp(newSel);
+
+                    // Sync custom brush explicitly here since we need access to the calculated newSel
+                    // and we can't easily use the helper inside the functional update.
+                    const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+                    const brushData: Record<string, TileData> = {};
+                    for (let dy = 0; dy < newSel.h; dy++) {
+                        for (let dx = 0; dx < newSel.w; dx++) {
+                            const srcX = newSel.x + dx;
+                            const srcY = newSel.y + dy;
+                            const tileId = srcY * tilesPerRow + srcX;
+                            brushData[`${dx},${dy}`] = { tileId, flipX: false };
+                        }
+                    }
+                    setCustomBrush({
+                        width: newSel.w,
+                        height: newSel.h,
+                        data: brushData
+                    });
 
                     return newSel;
                 });
@@ -391,7 +430,7 @@ export function MapEditor() {
 
         if (currentTool === "brush") {
             if (customBrush) {
-                // Use independent Custom Brush
+                // Unified Paint Logic
                 Object.entries(customBrush.data).forEach(([key, tileData]) => {
                     const [dx, dy] = key.split(",").map(Number);
                     const targetX = gridX + (dx * TILE_WIDTH);
@@ -399,40 +438,17 @@ export function MapEditor() {
 
                     if (targetX >= pixelWidth || targetY >= pixelHeight) return;
 
-                    // Respect Flip (Applying global flip to the whole stamp could be complex, 
-                    // simpliest is to flip each tile if isFlipped is on, OR flip the coordinate lookup.
-                    // For now, let's just pass the tileData as is, maybe simple tile flip).
-                    // Ideally we should transform the brush coordinates if isFlipped is true.
+                    // Combined Flip Logic: Source Flip XOR Global Flip
+                    const combinedFlip = tileData.flipX !== isFlipped;
 
-                    // Pass the source tile's flip state explicitly
-                    // If we want to support global flipping of the stamp later, we'd XOR this with isFlipped
-                    paintTile(targetX, targetY, tileData.tileId, tileData.flipX);
+                    paintTile(targetX, targetY, tileData.tileId, combinedFlip);
                 });
-
-            } else {
-                // Standard Palette Brush
-                for (let dy = 0; dy < paletteSelection.h; dy++) {
-                    for (let dx = 0; dx < paletteSelection.w; dx++) {
-                        const srcDx = isFlipped ? (paletteSelection.w - 1 - dx) : dx;
-                        const px = paletteSelection.x + srcDx;
-                        const py = paletteSelection.y + dy;
-                        const tileId = py * tilesPerRow + px;
-
-                        const targetX = gridX + (dx * TILE_WIDTH);
-                        const targetY = gridY + (dy * TILE_HEIGHT);
-
-                        if (targetX >= pixelWidth || targetY >= pixelHeight) continue;
-
-                        paintTile(targetX, targetY, tileId);
-                    }
-                }
             }
 
             lastPaintedTiles.current.add(tileKey);
-            // Add current palette selection to history on paint (only if standard brush)
-            if (!customBrush) {
-                addRecentStamp(paletteSelection);
-            }
+            // We assume customBrush is always set now if we are brushing.
+            // If it's a "Standard" selection, it's already in history via updatePaletteSelection.
+            // If it's a "Custom" sampled brush, we added it to history if applicable in sampleArea.
         } else if (currentTool === "eraser") {
             paintTile(gridX, gridY, null);
             lastPaintedTiles.current.add(tileKey);
@@ -617,7 +633,7 @@ export function MapEditor() {
             <RecentTiles
                 recentStamps={recentStamps}
                 onSelect={(stamp) => {
-                    setPaletteSelection(stamp);
+                    updatePaletteSelection(stamp);
                     setCurrentTool("brush");
                     addRecentStamp(stamp);
                 }}
@@ -633,14 +649,25 @@ export function MapEditor() {
                     <Palette
                         image={image}
                         selection={paletteSelection}
-                        setSelection={setPaletteSelection}
+                        setSelection={(val) => {
+                            if (typeof val === 'function') {
+                                setPaletteSelection(prev => {
+                                    const next = val(prev);
+                                    updatePaletteSelection(next); // Recalculate brush
+                                    return next;
+                                });
+                            } else {
+                                updatePaletteSelection(val);
+                            }
+                        }}
                         zoom={zoomPalette}
                         setZoom={setZoomPalette}
                         isFlipped={isFlipped}
                         onToolChange={() => {
                             setCurrentTool("brush");
-                            // If picking from palette, we clear custom brush to revert to standard mode
-                            setCustomBrush(null);
+                            // Note: Palette internal clicks will need to call setSelection
+                            // We need to make sure Palette calls the passed setSelection prop.
+                            // If Palette allows choosing new rect, it works.
                         }}
                     />
                 </div>

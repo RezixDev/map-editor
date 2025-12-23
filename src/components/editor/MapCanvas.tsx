@@ -165,45 +165,34 @@ export function MapCanvas({
                         const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
 
                         context.save();
-                        // Match paint logic: Use the tile's own flip state, ignoring global isFlipped for now
-                        // to ensure perfect WYSIWYG with the paint operation.
-                        if (tileData.flipX) {
+                        // Combined Flip Logic: Source Flip XOR Global Flip
+                        const combinedFlip = tileData.flipX !== isFlipped;
+
+                        if (combinedFlip) {
                             context.translate(drawX + TILE_WIDTH, drawY);
                             context.scale(-1, 1);
-                            // Note: We are flipping the TILE image, but not the brush layout here.
-                            // Implementing fullbrush flip requires transforming dx/dy.
-                            // For MVP, we flip tiles in place.
                             context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
                         } else {
                             context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, drawX, drawY, TILE_WIDTH, TILE_HEIGHT);
                         }
                         context.restore();
                     });
-                } else {
-                    // Render Standard Palette Brush
-                    const previewW = currentTool === "brush" ? paletteSelection.w : 1;
-                    const previewH = currentTool === "brush" ? paletteSelection.h : 1;
+                } else if (currentTool === "fill") {
+                    // Simple 1x1 ghost for Fill tool
+                    const srcX = paletteSelection.x * TILE_WIDTH;
+                    const srcY = paletteSelection.y * TILE_HEIGHT;
 
-                    for (let dy = 0; dy < previewH; dy++) {
-                        for (let dx = 0; dx < previewW; dx++) {
-                            const srcDx = isFlipped ? (previewW - 1 - dx) : dx;
-                            const srcX = (paletteSelection.x + srcDx) * TILE_WIDTH;
-                            const srcY = (paletteSelection.y + dy) * TILE_HEIGHT;
-                            const destX = gridX + (dx * TILE_WIDTH);
-                            const destY = gridY + (dy * TILE_HEIGHT);
-
-                            context.save();
-                            if (isFlipped) {
-                                context.translate(destX + TILE_WIDTH, destY);
-                                context.scale(-1, 1);
-                                context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
-                            } else {
-                                context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, destX, destY, TILE_WIDTH, TILE_HEIGHT);
-                            }
-                            context.restore();
-                        }
+                    context.save();
+                    if (isFlipped) {
+                        context.translate(gridX + TILE_WIDTH, gridY);
+                        context.scale(-1, 1);
+                        context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
+                    } else {
+                        context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, gridX, gridY, TILE_WIDTH, TILE_HEIGHT);
                     }
+                    context.restore();
                 }
+
                 context.globalAlpha = 1.0;
             }
 

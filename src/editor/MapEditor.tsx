@@ -1,5 +1,4 @@
 import { useRef, useState, useEffect, type MouseEvent } from "react";
-import { useImmer } from "use-immer";
 import spritesheet from "../assets/project.png";
 import { useMapState } from "../hooks/useMapState";
 import { type TileData, type Tool, type SelectionRect } from "../types";
@@ -18,44 +17,34 @@ export function MapEditor() {
         setMapSize,
         saveCheckpoint,
         performUndo,
-        performRedo
+
+        performRedo,
+        recentStamps,
+        addRecentStamp
     } = useMapState();
 
     const [image, setImage] = useState<HTMLImageElement | null>(null);
     const [paletteWidth, setPaletteWidth] = useState(280);
     const [zoomMap, setZoomMap] = useState(1);
     const [zoomPalette, setZoomPalette] = useState(1);
+    const [cameraOffset, setCameraOffset] = useState({ x: 0, y: 0 });
     const [isFlipped, setIsFlipped] = useState(false);
     const [paletteSelection, setPaletteSelection] = useState<SelectionRect>({ x: 0, y: 0, w: 1, h: 1 });
     const [activeLayerIndex, setActiveLayerIndex] = useState(0);
     const [currentTool, setCurrentTool] = useState<Tool>("brush");
     const [selection, setSelection] = useState<SelectionRect | null>(null);
     const [clipboard, setClipboard] = useState<Record<string, TileData> | null>(null);
-    const [recentStamps, setRecentStamps] = useImmer<SelectionRect[]>([]);
+
 
     const isMouseDown = useRef(false);
+    const isPanning = useRef(false);
+    const isSpacePressed = useRef(false);
     const isResizing = useRef(false);
     const lastPaintedTiles = useRef<Set<string>>(new Set());
     const selectionStart = useRef<{ x: number; y: number } | null>(null);
 
 
-    function addRecentStamp(stamp: SelectionRect) {
-        setRecentStamps(draft => {
-            // Remove exact duplicate
-            const index = draft.findIndex(s =>
-                s.x === stamp.x && s.y === stamp.y && s.w === stamp.w && s.h === stamp.h
-            );
-            if (index !== -1) {
-                draft.splice(index, 1);
-            }
-            // Add to front
-            draft.unshift(stamp);
-            // Limit to 10
-            if (draft.length > 10) {
-                draft.pop();
-            }
-        });
-    }
+
 
     // Load Image and Init
     useEffect(() => {
@@ -72,6 +61,14 @@ export function MapEditor() {
         function handleKeyDown(e: KeyboardEvent) {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
+            if (e.code === "Space") {
+                e.preventDefault();
+                isSpacePressed.current = true;
+                document.body.style.cursor = "grab";
+                return;
+            }
+
+            if (e.key.toLowerCase() === "i") setCurrentTool("eyedropper");
             if (e.key.toLowerCase() === "b") setCurrentTool("brush");
             if (e.key.toLowerCase() === "e") setCurrentTool("eraser");
             if (e.key.toLowerCase() === "g" || e.key.toLowerCase() === "f") setCurrentTool("fill");
@@ -171,8 +168,20 @@ export function MapEditor() {
             }
         }
 
+        function handleKeyUp(e: KeyboardEvent) {
+            if (e.code === "Space") {
+                isSpacePressed.current = false;
+                isPanning.current = false;
+                document.body.style.cursor = "default";
+            }
+        }
+
         window.addEventListener("keydown", handleKeyDown);
-        return () => window.removeEventListener("keydown", handleKeyDown);
+        window.addEventListener("keyup", handleKeyUp);
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+            window.removeEventListener("keyup", handleKeyUp);
+        };
     }, [layers, selection, clipboard, activeLayerIndex, isFlipped, image]);
 
     // Resize Logic
@@ -249,9 +258,12 @@ export function MapEditor() {
     }
 
     function handleMapInteraction(e: MouseEvent<HTMLCanvasElement>) {
+        if (isPanning.current) return;
+
         // e.nativeEvent.offsetX is relative to the canvas
-        const x = e.nativeEvent.offsetX / zoomMap;
-        const y = e.nativeEvent.offsetY / zoomMap;
+        // Account for Zoom AND Camera Offset
+        const x = (e.nativeEvent.offsetX / zoomMap) - cameraOffset.x;
+        const y = (e.nativeEvent.offsetY / zoomMap) - cameraOffset.y;
 
         const pixelWidth = mapSize.width * TILE_WIDTH;
         const pixelHeight = mapSize.height * TILE_HEIGHT;
@@ -312,6 +324,37 @@ export function MapEditor() {
     }
 
     function handleMapMouseDown(e: MouseEvent<HTMLCanvasElement>) {
+        if (isSpacePressed.current) {
+            isPanning.current = true;
+            document.body.style.cursor = "grabbing";
+            return;
+        }
+
+        // Eyedropper Logic
+        if (currentTool === "eyedropper" || e.altKey) {
+            if (!image) return;
+            const x = (e.nativeEvent.offsetX / zoomMap) - cameraOffset.x;
+            const y = (e.nativeEvent.offsetY / zoomMap) - cameraOffset.y;
+            const gx = Math.floor(x / TILE_WIDTH);
+            const gy = Math.floor(y / TILE_HEIGHT);
+            const key = `${gx},${gy}`;
+
+            const activeData = layers[activeLayerIndex].data;
+            const tile = activeData[key];
+
+            if (tile) {
+                const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+                const srcX = tile.tileId % tilesPerRow;
+                const srcY = Math.floor(tile.tileId / tilesPerRow);
+
+                const newSelection = { x: srcX, y: srcY, w: 1, h: 1 };
+                setPaletteSelection(newSelection);
+                addRecentStamp(newSelection);
+                setCurrentTool("brush");
+            }
+            return;
+        }
+
         if (currentTool !== "marquee") {
             saveCheckpoint();
         }
@@ -321,12 +364,26 @@ export function MapEditor() {
     }
 
     function handleMapMouseMove(e: MouseEvent<HTMLCanvasElement>) {
+        if (isPanning.current) {
+            setCameraOffset(prev => ({
+                x: prev.x + e.movementX / zoomMap,
+                y: prev.y + e.movementY / zoomMap
+            }));
+            return;
+        }
+
         if (isMouseDown.current) {
             handleMapInteraction(e);
         }
     }
 
     function handleMapMouseUp() {
+        if (isPanning.current) {
+            isPanning.current = false;
+            document.body.style.cursor = isSpacePressed.current ? "grab" : "default";
+            return;
+        }
+
         isMouseDown.current = false;
         lastPaintedTiles.current.clear();
     }
@@ -474,8 +531,10 @@ export function MapEditor() {
                     <MapCanvas
                         layers={layers}
                         mapSize={mapSize}
+
                         zoom={zoomMap}
                         setZoom={setZoomMap}
+                        cameraOffset={cameraOffset}
                         selection={selection}
                         image={image}
                         currentTool={currentTool}

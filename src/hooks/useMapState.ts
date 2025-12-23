@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useImmer } from "use-immer";
-import { type Layer } from "../types";
+import { type Layer, type SelectionRect } from "../types";
 
 const STORAGE_KEY = "tile_craft_editor_v1";
 
@@ -18,6 +18,7 @@ const INITIAL_MAP_SIZE = { width: 64, height: 16 };
 export function useMapState() {
     const [layers, setLayers] = useImmer<Layer[]>(INITIAL_LAYERS);
     const [mapSize, setMapSize] = useState(INITIAL_MAP_SIZE);
+    const [recentStamps, setRecentStamps] = useImmer<SelectionRect[]>([]);
 
     // History Stacks
     const historyPast = useRef<Layer[][]>([]);
@@ -35,6 +36,9 @@ export function useMapState() {
                 if (data && Array.isArray(data.layers) && data.mapSize) {
                     setLayers(data.layers);
                     setMapSize(data.mapSize);
+                    if (data.recentStamps) {
+                        setRecentStamps(data.recentStamps);
+                    }
                 } else if (Array.isArray(data)) {
                     // Legacy fallback if just layers were saved
                     setLayers(data);
@@ -45,7 +49,7 @@ export function useMapState() {
         } finally {
             isHydrated.current = true;
         }
-    }, [setLayers]);
+    }, [setLayers, setRecentStamps]);
 
     // Persistence
     useEffect(() => {
@@ -59,7 +63,8 @@ export function useMapState() {
             try {
                 const state = {
                     layers,
-                    mapSize
+                    mapSize,
+                    recentStamps
                 };
                 const json = JSON.stringify(state);
 
@@ -77,7 +82,25 @@ export function useMapState() {
         return () => {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         };
-    }, [layers, mapSize]);
+    }, [layers, mapSize, recentStamps]);
+
+    const addRecentStamp = useCallback((stamp: SelectionRect) => {
+        setRecentStamps(draft => {
+            // Remove exact duplicate
+            const index = draft.findIndex(s =>
+                s.x === stamp.x && s.y === stamp.y && s.w === stamp.w && s.h === stamp.h
+            );
+            if (index !== -1) {
+                draft.splice(index, 1);
+            }
+            // Add to front
+            draft.unshift(stamp);
+            // Limit to 10
+            if (draft.length > 10) {
+                draft.pop();
+            }
+        });
+    }, [setRecentStamps]);
 
     // Checkpoint
     const saveCheckpoint = useCallback(() => {
@@ -115,6 +138,9 @@ export function useMapState() {
         setLayers,
         mapSize,
         setMapSize,
+
+        recentStamps,
+        addRecentStamp,
         saveCheckpoint,
         performUndo,
         performRedo,

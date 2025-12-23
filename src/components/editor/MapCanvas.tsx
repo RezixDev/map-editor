@@ -12,6 +12,7 @@ type MapCanvasProps = {
     currentTool: Tool;
     paletteSelection: SelectionRect;
     isFlipped: boolean;
+    cameraOffset: { x: number; y: number };
     onMouseDown: (e: MouseEvent<HTMLCanvasElement>) => void;
     onMouseMove: (e: MouseEvent<HTMLCanvasElement>) => void;
     onMouseUp: () => void;
@@ -25,9 +26,11 @@ export function MapCanvas({
     setZoom,
     selection,
     image,
+
     currentTool,
     paletteSelection,
     isFlipped,
+    cameraOffset,
     onMouseDown,
     onMouseMove,
     onMouseUp,
@@ -55,6 +58,9 @@ export function MapCanvas({
         context.clearRect(0, 0, canvas.width, canvas.height);
 
         // 1. Draw Map Tiles (Layered)
+        context.save();
+        context.translate(cameraOffset.x, cameraOffset.y);
+
         layers.forEach((layer) => {
             if (!layer.visible) return;
 
@@ -83,8 +89,11 @@ export function MapCanvas({
 
             context.restore();
         });
+        context.restore();
 
-        // 2. Draw Grid
+        // 2. Draw Grid (with offset)
+        context.save();
+        context.translate(cameraOffset.x, cameraOffset.y);
         context.beginPath();
         for (let i = 0; i <= mapSize.width; i++) {
             context.moveTo(i * TILE_WIDTH, 0);
@@ -97,9 +106,12 @@ export function MapCanvas({
         context.strokeStyle = "rgba(0,0,0, 0.4)";
         context.lineWidth = 1;
         context.stroke();
+        context.restore();
 
-        // 3. Draw Selection Marquee
+        // 3. Draw Selection Marquee (with offset)
         if (selection) {
+            context.save();
+            context.translate(cameraOffset.x, cameraOffset.y);
             const selX = selection.x * TILE_WIDTH;
             const selY = selection.y * TILE_HEIGHT;
             const selW = selection.w * TILE_WIDTH;
@@ -123,12 +135,17 @@ export function MapCanvas({
 
             context.setLineDash([]);
             context.lineDashOffset = 0;
+            context.restore();
         }
 
         // 4. Draw Ghost/Hover Cursor
         if (mousePosRef.current) {
-            const gridX = Math.floor(mousePosRef.current.x / TILE_WIDTH) * TILE_WIDTH;
-            const gridY = Math.floor(mousePosRef.current.y / TILE_HEIGHT) * TILE_HEIGHT;
+            // Apply offset to ghost rendering
+            context.save();
+            context.translate(cameraOffset.x, cameraOffset.y);
+
+            const gridX = Math.floor((mousePosRef.current.x - cameraOffset.x) / TILE_WIDTH) * TILE_WIDTH;
+            const gridY = Math.floor((mousePosRef.current.y - cameraOffset.y) / TILE_HEIGHT) * TILE_HEIGHT;
 
             // Draw Ghost Tile
             if (currentTool === "brush" || currentTool === "fill") {
@@ -189,6 +206,7 @@ export function MapCanvas({
                 context.setLineDash([]);
                 context.lineDashOffset = 0;
             }
+            context.restore();
         }
     }
 
@@ -201,7 +219,7 @@ export function MapCanvas({
         return () => {
             if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current);
         };
-    }, [layers, selection, mapSize, zoom, image, paletteSelection, currentTool, isFlipped]);
+    }, [layers, selection, mapSize, zoom, image, paletteSelection, currentTool, isFlipped, cameraOffset]);
 
     function handleInternalMouseMove(e: MouseEvent<HTMLCanvasElement>) {
         // Calculate hover pos

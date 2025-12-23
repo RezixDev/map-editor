@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, type MouseEvent } from "react";
 import { useImmer } from "use-immer";
 import spritesheet from "../assets/project.png";
-import { TileData, Layer, Tool, SelectionRect } from "../types";
+import { type TileData, type Layer, type Tool, type SelectionRect } from "../types";
 import { TILE_WIDTH, TILE_HEIGHT } from "../constants";
 import { LayerPanel } from "../components/editor/LayerPanel";
 import { Toolbar } from "../components/editor/Toolbar";
@@ -9,7 +9,7 @@ import { Palette } from "../components/editor/Palette";
 import { MapCanvas } from "../components/editor/MapCanvas";
 
 export function MapEditor() {
-    const imageRef = useRef<HTMLImageElement | null>(null);
+    const [image, setImage] = useState<HTMLImageElement | null>(null);
 
     const [mapSize, setMapSize] = useState({ width: 64, height: 16 });
     const [paletteWidth, setPaletteWidth] = useState(280);
@@ -66,9 +66,8 @@ export function MapEditor() {
         const img = new Image();
         img.src = spritesheet;
         img.onload = () => {
-            imageRef.current = img;
-            // Force re-render to update components with image
-            setLayers(d => { });
+
+            setImage(img);
         };
     }, []);
 
@@ -84,11 +83,11 @@ export function MapEditor() {
             if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
                 e.preventDefault();
                 setPaletteSelection(prev => {
-                    const img = imageRef.current;
-                    if (!img) return prev;
+
+                    if (!image) return prev;
                     let { x, y } = prev;
-                    const maxW = Math.floor(img.width / TILE_WIDTH) - 1;
-                    const maxH = Math.floor(img.height / TILE_HEIGHT) - 1;
+                    const maxW = Math.floor(image.width / TILE_WIDTH) - 1;
+                    const maxH = Math.floor(image.height / TILE_HEIGHT) - 1;
                     if (e.key === "ArrowLeft") x = Math.max(0, x - 1);
                     if (e.key === "ArrowRight") x = Math.min(maxW, x + 1);
                     if (e.key === "ArrowUp") y = Math.max(0, y - 1);
@@ -172,7 +171,7 @@ export function MapEditor() {
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [layers, selection, clipboard, activeLayerIndex, isFlipped]);
+    }, [layers, selection, clipboard, activeLayerIndex, isFlipped, image]);
 
     // Resize Logic
     useEffect(() => {
@@ -265,7 +264,7 @@ export function MapEditor() {
 
         if (lastPaintedTiles.current.has(tileKey)) return;
 
-        const image = imageRef.current;
+
         if (!image) return;
         const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
 
@@ -333,9 +332,7 @@ export function MapEditor() {
 
         const img = new Image();
         img.onload = () => {
-            imageRef.current = img;
-            // Force update
-            setLayers(d => { });
+            setImage(img);
         };
         img.src = URL.createObjectURL(file);
     }
@@ -377,7 +374,6 @@ export function MapEditor() {
     }
 
     function handleExportPng() {
-        const image = imageRef.current;
         if (!image) return;
 
         const tempCanvas = document.createElement("canvas");
@@ -439,7 +435,7 @@ export function MapEditor() {
                     style={{ width: paletteWidth }}
                 >
                     <Palette
-                        image={imageRef.current}
+                        image={image}
                         selection={paletteSelection}
                         setSelection={setPaletteSelection}
                         zoom={zoomPalette}
@@ -465,7 +461,7 @@ export function MapEditor() {
                         zoom={zoomMap}
                         setZoom={setZoomMap}
                         selection={selection}
-                        image={imageRef.current}
+                        image={image}
                         currentTool={currentTool}
                         paletteSelection={paletteSelection}
                         isFlipped={isFlipped}

@@ -74,6 +74,13 @@ export function Toolbar({
                 >
                     Marquee
                 </button>
+                <button
+                    className={`px-3 py-1 rounded text-sm ${currentTool === "eyedropper" ? "bg-blue-600 text-white" : "bg-white text-gray-700"}`}
+                    onClick={() => setCurrentTool("eyedropper")}
+                    title="Shortcut: I (Alt+Click to quick-pick)"
+                >
+                    Eyedropper
+                </button>
             </div>
 
             <div className="flex gap-2 p-2 bg-gray-100 rounded border border-gray-300">

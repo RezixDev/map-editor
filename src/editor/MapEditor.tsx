@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, type MouseEvent } from "react";
 import spritesheet from "../assets/project.png";
 import { useMapState } from "../hooks/useMapState";
-import { type TileData, type Tool, type SelectionRect } from "../types";
+import { type TileData, type Tool, type SelectionRect, type CustomBrush } from "../types";
 import { TILE_WIDTH, TILE_HEIGHT } from "../constants";
 import { LayerPanel } from "../components/editor/LayerPanel";
 import { Toolbar } from "../components/editor/Toolbar";
@@ -33,7 +33,9 @@ export function MapEditor() {
     const [activeLayerIndex, setActiveLayerIndex] = useState(0);
     const [currentTool, setCurrentTool] = useState<Tool>("brush");
     const [selection, setSelection] = useState<SelectionRect | null>(null);
+
     const [clipboard, setClipboard] = useState<Record<string, TileData> | null>(null);
+    const [customBrush, setCustomBrush] = useState<CustomBrush | null>(null);
 
 
     const isMouseDown = useRef(false);
@@ -45,6 +47,105 @@ export function MapEditor() {
 
 
 
+
+    function sampleArea(area: { x: number, y: number, w: number, h: number }) {
+        if (!image) return;
+
+        const brushData: Record<string, TileData> = {};
+        let foundTiles = false;
+        let minX = Infinity;
+        let minY = Infinity;
+
+        // 1. Capture Data
+        for (let dy = 0; dy < area.h; dy++) {
+            for (let dx = 0; dx < area.w; dx++) {
+                const mapX = area.x + dx;
+                const mapY = area.y + dy;
+                const key = `${mapX},${mapY}`;
+
+                let tile = layers[activeLayerIndex].data[key];
+                if (!tile) {
+                    for (let i = layers.length - 1; i >= 0; i--) {
+                        if (!layers[i].visible) continue;
+                        if (layers[i].data[key]) {
+                            tile = layers[i].data[key];
+                            break;
+                        }
+                    }
+                }
+
+                if (tile) {
+                    brushData[`${dx},${dy}`] = tile;
+                    foundTiles = true;
+                    if (dx < minX) minX = dx;
+                    if (dy < minY) minY = dy;
+                }
+            }
+        }
+
+        if (foundTiles) {
+            // Trim empty space from top-left (smart anchor)
+            const trimmedData: Record<string, TileData> = {};
+            let maxWidth = 0;
+            let maxHeight = 0;
+
+            Object.entries(brushData).forEach(([key, tile]) => {
+                const [dx, dy] = key.split(",").map(Number);
+                const newX = dx - minX;
+                const newY = dy - minY;
+                trimmedData[`${newX},${newY}`] = tile;
+                if (newX >= maxWidth) maxWidth = newX;
+                if (newY >= maxHeight) maxHeight = newY;
+            });
+
+            const newBrush: CustomBrush = {
+                width: maxWidth + 1,
+                height: maxHeight + 1,
+                data: trimmedData
+            };
+
+            setCustomBrush(newBrush);
+            setCurrentTool("brush");
+            setSelection(null);
+
+            // Retroactive History Support
+            // Try to see if this matches a contiguous spritesheet rect for the palette/history
+            // If complex/scattered, we skip adding to history for now.
+            const firstTile = Object.values(trimmedData)[0];
+            if (firstTile) {
+                // Check if *all* tiles align contiguously on spritesheet relative to the first
+                const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+                const firstId = firstTile.tileId;
+                const startSrcX = firstId % tilesPerRow;
+                const startSrcY = Math.floor(firstId / tilesPerRow);
+
+                let isContiguous = true;
+                for (let y = 0; y < newBrush.height; y++) {
+                    for (let x = 0; x < newBrush.width; x++) {
+                        const t = trimmedData[`${x},${y}`];
+                        if (!t) continue; // Gaps are allowed in custom brush, but might break rect check if strictly rect
+
+                        const expectedId = (startSrcY + y) * tilesPerRow + (startSrcX + x);
+                        if (t.tileId !== expectedId) {
+                            isContiguous = false;
+                            break;
+                        }
+                    }
+                    if (!isContiguous) break;
+                }
+
+                if (isContiguous) {
+                    const newSel = { x: startSrcX, y: startSrcY, w: newBrush.width, h: newBrush.height };
+                    setPaletteSelection(newSel);
+                    addRecentStamp(newSel);
+                } else {
+                    // Clear palette selection to indicate custom brush
+                    setPaletteSelection({ x: 0, y: 0, w: 0, h: 0 }); // Or some indicator
+                }
+            }
+
+        }
+    }
 
     // Load Image and Init
     useEffect(() => {
@@ -68,7 +169,13 @@ export function MapEditor() {
                 return;
             }
 
-            if (e.key.toLowerCase() === "i") setCurrentTool("eyedropper");
+            if (e.key.toLowerCase() === "i") {
+                if (selection) {
+                    sampleArea(selection);
+                } else {
+                    setCurrentTool("eyedropper");
+                }
+            }
             if (e.key.toLowerCase() === "b") setCurrentTool("brush");
             if (e.key.toLowerCase() === "e") setCurrentTool("eraser");
             if (e.key.toLowerCase() === "g" || e.key.toLowerCase() === "f") setCurrentTool("fill");
@@ -208,7 +315,7 @@ export function MapEditor() {
         };
     }, []);
 
-    function paintTile(gridX: number, gridY: number, tileId: number | null) {
+    function paintTile(gridX: number, gridY: number, tileId: number | null, flipX?: boolean) {
         const gx = Math.floor(gridX / TILE_WIDTH);
         const gy = Math.floor(gridY / TILE_HEIGHT);
         const key = `${gx},${gy}`;
@@ -218,7 +325,7 @@ export function MapEditor() {
             if (tileId === null) {
                 delete activeData[key];
             } else {
-                activeData[key] = { tileId, flipX: isFlipped };
+                activeData[key] = { tileId, flipX: flipX !== undefined ? flipX : isFlipped };
             }
         });
     }
@@ -283,32 +390,56 @@ export function MapEditor() {
         const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
 
         if (currentTool === "brush") {
-            for (let dy = 0; dy < paletteSelection.h; dy++) {
-                for (let dx = 0; dx < paletteSelection.w; dx++) {
-                    const srcDx = isFlipped ? (paletteSelection.w - 1 - dx) : dx;
-                    const px = paletteSelection.x + srcDx;
-                    const py = paletteSelection.y + dy;
-                    const tileId = py * tilesPerRow + px;
-
+            if (customBrush) {
+                // Use independent Custom Brush
+                Object.entries(customBrush.data).forEach(([key, tileData]) => {
+                    const [dx, dy] = key.split(",").map(Number);
                     const targetX = gridX + (dx * TILE_WIDTH);
                     const targetY = gridY + (dy * TILE_HEIGHT);
 
-                    if (targetX >= pixelWidth || targetY >= pixelHeight) continue;
+                    if (targetX >= pixelWidth || targetY >= pixelHeight) return;
 
-                    paintTile(targetX, targetY, tileId);
+                    // Respect Flip (Applying global flip to the whole stamp could be complex, 
+                    // simpliest is to flip each tile if isFlipped is on, OR flip the coordinate lookup.
+                    // For now, let's just pass the tileData as is, maybe simple tile flip).
+                    // Ideally we should transform the brush coordinates if isFlipped is true.
+
+                    // Pass the source tile's flip state explicitly
+                    // If we want to support global flipping of the stamp later, we'd XOR this with isFlipped
+                    paintTile(targetX, targetY, tileData.tileId, tileData.flipX);
+                });
+
+            } else {
+                // Standard Palette Brush
+                for (let dy = 0; dy < paletteSelection.h; dy++) {
+                    for (let dx = 0; dx < paletteSelection.w; dx++) {
+                        const srcDx = isFlipped ? (paletteSelection.w - 1 - dx) : dx;
+                        const px = paletteSelection.x + srcDx;
+                        const py = paletteSelection.y + dy;
+                        const tileId = py * tilesPerRow + px;
+
+                        const targetX = gridX + (dx * TILE_WIDTH);
+                        const targetY = gridY + (dy * TILE_HEIGHT);
+
+                        if (targetX >= pixelWidth || targetY >= pixelHeight) continue;
+
+                        paintTile(targetX, targetY, tileId);
+                    }
                 }
             }
 
             lastPaintedTiles.current.add(tileKey);
-            // Add current palette selection to history on paint
-            addRecentStamp(paletteSelection);
+            // Add current palette selection to history on paint (only if standard brush)
+            if (!customBrush) {
+                addRecentStamp(paletteSelection);
+            }
         } else if (currentTool === "eraser") {
             paintTile(gridX, gridY, null);
             lastPaintedTiles.current.add(tileKey);
         } else if (currentTool === "fill" && e.type === "mousedown") {
             const fillTileId = paletteSelection.y * tilesPerRow + paletteSelection.x;
             floodFill(gx, gy, fillTileId);
-        } else if (currentTool === "marquee") {
+        } else if (currentTool === "marquee" || currentTool === "eyedropper") {
             if (e.type === "mousedown") {
                 selectionStart.current = { x: gx, y: gy };
                 setSelection({ x: gx, y: gy, w: 1, h: 1 });
@@ -331,31 +462,19 @@ export function MapEditor() {
         }
 
         // Eyedropper Logic
-        if (currentTool === "eyedropper" || e.altKey) {
+        // Alt-click to quick pick single tile (Legacy/Power User)
+        if (e.altKey) {
             if (!image) return;
             const x = (e.nativeEvent.offsetX / zoomMap) - cameraOffset.x;
             const y = (e.nativeEvent.offsetY / zoomMap) - cameraOffset.y;
             const gx = Math.floor(x / TILE_WIDTH);
             const gy = Math.floor(y / TILE_HEIGHT);
-            const key = `${gx},${gy}`;
 
-            const activeData = layers[activeLayerIndex].data;
-            const tile = activeData[key];
-
-            if (tile) {
-                const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
-                const srcX = tile.tileId % tilesPerRow;
-                const srcY = Math.floor(tile.tileId / tilesPerRow);
-
-                const newSelection = { x: srcX, y: srcY, w: 1, h: 1 };
-                setPaletteSelection(newSelection);
-                addRecentStamp(newSelection);
-                setCurrentTool("brush");
-            }
+            sampleArea({ x: gx, y: gy, w: 1, h: 1 });
             return;
         }
 
-        if (currentTool !== "marquee") {
+        if (currentTool !== "marquee" && currentTool !== "eyedropper") {
             saveCheckpoint();
         }
         isMouseDown.current = true;
@@ -386,6 +505,10 @@ export function MapEditor() {
 
         isMouseDown.current = false;
         lastPaintedTiles.current.clear();
+
+        if (currentTool === "eyedropper" && selection) {
+            sampleArea(selection);
+        }
     }
 
     function handleUploadImage(e: React.ChangeEvent<HTMLInputElement>) {
@@ -514,7 +637,11 @@ export function MapEditor() {
                         zoom={zoomPalette}
                         setZoom={setZoomPalette}
                         isFlipped={isFlipped}
-                        onToolChange={() => setCurrentTool("brush")}
+                        onToolChange={() => {
+                            setCurrentTool("brush");
+                            // If picking from palette, we clear custom brush to revert to standard mode
+                            setCustomBrush(null);
+                        }}
                     />
                 </div>
 
@@ -540,6 +667,7 @@ export function MapEditor() {
                         currentTool={currentTool}
                         paletteSelection={paletteSelection}
                         isFlipped={isFlipped}
+                        customBrush={customBrush}
                         onMouseDown={handleMapMouseDown}
                         onMouseMove={handleMapMouseMove}
                         onMouseUp={handleMapMouseUp}

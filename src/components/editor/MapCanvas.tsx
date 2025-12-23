@@ -1,5 +1,5 @@
 import { useRef, useEffect, type MouseEvent } from "react";
-import { type Layer, type SelectionRect, type Tool } from "../../types";
+import { type Layer, type SelectionRect, type Tool, type CustomBrush } from "../../types";
 import { TILE_WIDTH, TILE_HEIGHT } from "../../constants";
 
 type MapCanvasProps = {
@@ -12,6 +12,7 @@ type MapCanvasProps = {
     currentTool: Tool;
     paletteSelection: SelectionRect;
     isFlipped: boolean;
+    customBrush: CustomBrush | null;
     cameraOffset: { x: number; y: number };
     onMouseDown: (e: MouseEvent<HTMLCanvasElement>) => void;
     onMouseMove: (e: MouseEvent<HTMLCanvasElement>) => void;
@@ -30,6 +31,7 @@ export function MapCanvas({
     currentTool,
     paletteSelection,
     isFlipped,
+    customBrush,
     cameraOffset,
     onMouseDown,
     onMouseMove,
@@ -151,26 +153,55 @@ export function MapCanvas({
             if (currentTool === "brush" || currentTool === "fill") {
                 context.globalAlpha = 0.5;
 
-                const previewW = currentTool === "brush" ? paletteSelection.w : 1;
-                const previewH = currentTool === "brush" ? paletteSelection.h : 1;
+                if (customBrush && currentTool === "brush") {
+                    // Render Custom Brush
+                    Object.entries(customBrush.data).forEach(([key, tileData]) => {
+                        const [dx, dy] = key.split(",").map(Number);
+                        const drawX = gridX + (dx * TILE_WIDTH);
+                        const drawY = gridY + (dy * TILE_HEIGHT);
 
-                for (let dy = 0; dy < previewH; dy++) {
-                    for (let dx = 0; dx < previewW; dx++) {
-                        const srcDx = isFlipped ? (previewW - 1 - dx) : dx;
-                        const srcX = (paletteSelection.x + srcDx) * TILE_WIDTH;
-                        const srcY = (paletteSelection.y + dy) * TILE_HEIGHT;
-                        const destX = gridX + (dx * TILE_WIDTH);
-                        const destY = gridY + (dy * TILE_HEIGHT);
+                        const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+                        const srcX = (tileData.tileId % tilesPerRow) * TILE_WIDTH;
+                        const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
 
                         context.save();
-                        if (isFlipped) {
-                            context.translate(destX + TILE_WIDTH, destY);
+                        // Match paint logic: Use the tile's own flip state, ignoring global isFlipped for now
+                        // to ensure perfect WYSIWYG with the paint operation.
+                        if (tileData.flipX) {
+                            context.translate(drawX + TILE_WIDTH, drawY);
                             context.scale(-1, 1);
+                            // Note: We are flipping the TILE image, but not the brush layout here.
+                            // Implementing fullbrush flip requires transforming dx/dy.
+                            // For MVP, we flip tiles in place.
                             context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
                         } else {
-                            context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, destX, destY, TILE_WIDTH, TILE_HEIGHT);
+                            context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, drawX, drawY, TILE_WIDTH, TILE_HEIGHT);
                         }
                         context.restore();
+                    });
+                } else {
+                    // Render Standard Palette Brush
+                    const previewW = currentTool === "brush" ? paletteSelection.w : 1;
+                    const previewH = currentTool === "brush" ? paletteSelection.h : 1;
+
+                    for (let dy = 0; dy < previewH; dy++) {
+                        for (let dx = 0; dx < previewW; dx++) {
+                            const srcDx = isFlipped ? (previewW - 1 - dx) : dx;
+                            const srcX = (paletteSelection.x + srcDx) * TILE_WIDTH;
+                            const srcY = (paletteSelection.y + dy) * TILE_HEIGHT;
+                            const destX = gridX + (dx * TILE_WIDTH);
+                            const destY = gridY + (dy * TILE_HEIGHT);
+
+                            context.save();
+                            if (isFlipped) {
+                                context.translate(destX + TILE_WIDTH, destY);
+                                context.scale(-1, 1);
+                                context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
+                            } else {
+                                context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, destX, destY, TILE_WIDTH, TILE_HEIGHT);
+                            }
+                            context.restore();
+                        }
                     }
                 }
                 context.globalAlpha = 1.0;
@@ -219,7 +250,7 @@ export function MapCanvas({
         return () => {
             if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current);
         };
-    }, [layers, selection, mapSize, zoom, image, paletteSelection, currentTool, isFlipped, cameraOffset]);
+    }, [layers, selection, mapSize, zoom, image, paletteSelection, currentTool, isFlipped, cameraOffset, customBrush]);
 
     function handleInternalMouseMove(e: MouseEvent<HTMLCanvasElement>) {
         // Calculate hover pos

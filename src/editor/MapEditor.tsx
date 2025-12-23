@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, type MouseEvent } from "react";
-import { useImmer } from "use-immer";
 import spritesheet from "../assets/project.png";
-import { type TileData, type Layer, type Tool, type SelectionRect } from "../types";
+import { useMapState } from "../hooks/useMapState";
+import { type TileData, type Tool, type SelectionRect } from "../types";
 import { TILE_WIDTH, TILE_HEIGHT } from "../constants";
 import { LayerPanel } from "../components/editor/LayerPanel";
 import { Toolbar } from "../components/editor/Toolbar";
@@ -9,19 +9,22 @@ import { Palette } from "../components/editor/Palette";
 import { MapCanvas } from "../components/editor/MapCanvas";
 
 export function MapEditor() {
-    const [image, setImage] = useState<HTMLImageElement | null>(null);
+    const {
+        layers,
+        setLayers,
+        mapSize,
+        setMapSize,
+        saveCheckpoint,
+        performUndo,
+        performRedo
+    } = useMapState();
 
-    const [mapSize, setMapSize] = useState({ width: 64, height: 16 });
+    const [image, setImage] = useState<HTMLImageElement | null>(null);
     const [paletteWidth, setPaletteWidth] = useState(280);
     const [zoomMap, setZoomMap] = useState(1);
     const [zoomPalette, setZoomPalette] = useState(1);
     const [isFlipped, setIsFlipped] = useState(false);
     const [paletteSelection, setPaletteSelection] = useState<SelectionRect>({ x: 0, y: 0, w: 1, h: 1 });
-    const [layers, setLayers] = useImmer<Layer[]>([
-        { id: "ground", name: "Ground", visible: true, opacity: 1, data: {} },
-        { id: "decor", name: "Decoration", visible: true, opacity: 1, data: {} },
-        { id: "collision", name: "Collision", visible: true, opacity: 0.5, data: {} },
-    ]);
     const [activeLayerIndex, setActiveLayerIndex] = useState(0);
     const [currentTool, setCurrentTool] = useState<Tool>("brush");
     const [selection, setSelection] = useState<SelectionRect | null>(null);
@@ -31,34 +34,6 @@ export function MapEditor() {
     const isResizing = useRef(false);
     const lastPaintedTiles = useRef<Set<string>>(new Set());
     const selectionStart = useRef<{ x: number; y: number } | null>(null);
-
-    // History Stacks
-    const historyPast = useRef<Layer[][]>([]);
-    const historyFuture = useRef<Layer[][]>([]);
-
-    function saveCheckpoint() {
-        historyPast.current.push(layers);
-        if (historyPast.current.length > 50) historyPast.current.shift();
-        historyFuture.current = [];
-    }
-
-    function performUndo() {
-        if (historyPast.current.length === 0) return;
-        const previous = historyPast.current.pop();
-        if (previous) {
-            historyFuture.current.push(layers);
-            setLayers(previous);
-        }
-    }
-
-    function performRedo() {
-        if (historyFuture.current.length === 0) return;
-        const next = historyFuture.current.pop();
-        if (next) {
-            historyPast.current.push(layers);
-            setLayers(next);
-        }
-    }
 
     // Load Image and Init
     useEffect(() => {

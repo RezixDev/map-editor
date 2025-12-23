@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, type MouseEvent } from "react";
+import { useRef, useEffect, type MouseEvent } from "react";
 import { type Layer, type SelectionRect, type Tool } from "../../types";
 import { TILE_WIDTH, TILE_HEIGHT } from "../../constants";
 
@@ -34,7 +34,8 @@ export function MapCanvas({
     onMouseLeave,
 }: MapCanvasProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+    const mousePosRef = useRef<{ x: number; y: number } | null>(null);
+    const reqIdRef = useRef<number | null>(null);
 
     function renderMap() {
         const canvas = canvasRef.current;
@@ -125,9 +126,9 @@ export function MapCanvas({
         }
 
         // 4. Draw Ghost/Hover Cursor
-        if (hoverPos) {
-            const gridX = Math.floor(hoverPos.x / TILE_WIDTH) * TILE_WIDTH;
-            const gridY = Math.floor(hoverPos.y / TILE_HEIGHT) * TILE_HEIGHT;
+        if (mousePosRef.current) {
+            const gridX = Math.floor(mousePosRef.current.x / TILE_WIDTH) * TILE_WIDTH;
+            const gridY = Math.floor(mousePosRef.current.y / TILE_HEIGHT) * TILE_HEIGHT;
 
             // Draw Ghost Tile
             if (currentTool === "brush" || currentTool === "fill") {
@@ -192,21 +193,28 @@ export function MapCanvas({
     }
 
     useEffect(() => {
-        renderMap();
-    }, [layers, selection, mapSize, zoom, image, hoverPos, paletteSelection, currentTool, isFlipped]);
+        function loop() {
+            renderMap();
+            reqIdRef.current = requestAnimationFrame(loop);
+        }
+        loop();
+        return () => {
+            if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current);
+        };
+    }, [layers, selection, mapSize, zoom, image, paletteSelection, currentTool, isFlipped]);
 
     function handleInternalMouseMove(e: MouseEvent<HTMLCanvasElement>) {
         // Calculate hover pos
         const x = e.nativeEvent.offsetX / zoom;
         const y = e.nativeEvent.offsetY / zoom;
-        setHoverPos({ x, y });
+        mousePosRef.current = { x, y };
 
         // Propagate
         onMouseMove(e);
     }
 
     function handleInternalMouseLeave() {
-        setHoverPos(null);
+        mousePosRef.current = null;
         onMouseLeave();
     }
 

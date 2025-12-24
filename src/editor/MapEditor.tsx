@@ -716,14 +716,16 @@ export function MapEditor() {
 
     // Fix generateProceduralLevel call to use first available group if "grass" missing
     function handleGenerateLevel() {
-        if (confirm("This will overwrite the current map. Continue?")) {
+        // Use active group, or default to grass/first
+        const group = activeTileGroup || tileGroups["grass"] || Object.values(tileGroups)[0];
+
+        if (!group) {
+            alert("No Smart Components available to generate level. Please create or select one first.");
+            return;
+        }
+
+        if (confirm(`Generate level using "${group.name}"? This will overwrite the current map.`)) {
             saveCheckpoint();
-            // Use grass if available, else first one
-            const group = tileGroups["grass"] || Object.values(tileGroups)[0];
-            if (!group) {
-                alert("No Smart Components available to generate level.");
-                return;
-            }
 
             const newLayers = generateProceduralLevel(mapSize.width, mapSize.height, group);
             setLayers(newLayers);

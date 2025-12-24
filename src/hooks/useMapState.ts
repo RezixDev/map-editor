@@ -133,6 +133,54 @@ export function useMapState() {
     // Or just let it be. Usually resizing doesn't break tile data directly but 
     // for simplicity we won't clear history.
 
+    const addLayer = useCallback((baseName: string) => {
+        saveCheckpoint();
+        setLayers(draft => {
+            // Uniqueness check
+            let name = baseName;
+            let counter = 1;
+            while (draft.some(l => l.name === name)) {
+                name = `${baseName} (${counter})`;
+                counter++;
+            }
+
+            const newId = crypto.randomUUID();
+            draft.push({
+                id: newId,
+                name: name,
+                visible: true,
+                opacity: 1,
+                data: {}
+            });
+        });
+    }, [setLayers, saveCheckpoint]);
+
+    const removeLayer = useCallback((index: number) => {
+        // Prevent deleting last layer
+        if (layers.length <= 1) return;
+        saveCheckpoint();
+        setLayers(draft => {
+            draft.splice(index, 1);
+        });
+    }, [layers.length, setLayers, saveCheckpoint]);
+
+    const renameLayer = useCallback((index: number, newName: string) => {
+        setLayers(draft => {
+            // Basic uniqueness check: if exists, don't rename (or could suffix).
+            // For UI simplicity, we'll strict reject or auto-suffix.
+            // Let's auto-suffix to be safe and easy.
+            let name = newName;
+            let counter = 1;
+            // Check against OTHER layers
+            while (draft.some((l, i) => i !== index && l.name === name)) {
+                name = `${newName} (${counter})`;
+                counter++;
+            }
+            draft[index].name = name;
+        });
+    }, [setLayers]);
+
+
     return {
         layers,
         setLayers,
@@ -144,5 +192,9 @@ export function useMapState() {
         saveCheckpoint,
         performUndo,
         performRedo,
+
+        addLayer,
+        removeLayer,
+        renameLayer
     };
 }

@@ -20,7 +20,10 @@ export function MapEditor() {
 
         performRedo,
         recentStamps,
-        addRecentStamp
+        addRecentStamp,
+        addLayer,
+        removeLayer,
+        renameLayer
     } = useMapState();
 
     const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -736,6 +739,21 @@ export function MapEditor() {
                                 }
                             });
                         }}
+                        onAddLayer={() => {
+                            const name = prompt("Enter layer name:", "New Layer");
+                            if (name !== null) {
+                                addLayer(name || "Layer");
+                                setActiveLayerIndex(layers.length);
+                            }
+                        }}
+                        onRemoveLayer={(index) => {
+                            removeLayer(index);
+                            // If we deleted the active layer, or a layer below it, adjust
+                            if (activeLayerIndex >= index) {
+                                setActiveLayerIndex(Math.max(0, activeLayerIndex - 1));
+                            }
+                        }}
+                        onRenameLayer={renameLayer}
                     />
                 </div>
             </div>

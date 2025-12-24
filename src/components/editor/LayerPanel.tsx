@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from "react";
 import { type Layer } from "../../types";
 
 type LayerPanelProps = {
@@ -7,6 +8,9 @@ type LayerPanelProps = {
     onToggleVisibility: (index: number) => void;
     onOpacityChange: (index: number, opacity: number) => void;
     onMoveLayer: (index: number, direction: 'up' | 'down') => void;
+    onAddLayer: () => void;
+    onRemoveLayer: (index: number) => void;
+    onRenameLayer: (index: number, newName: string) => void;
 };
 
 export function LayerPanel({
@@ -15,11 +19,56 @@ export function LayerPanel({
     setActiveLayerIndex,
     onToggleVisibility,
     onOpacityChange,
-    onMoveLayer
+    onMoveLayer,
+    onAddLayer,
+    onRemoveLayer,
+    onRenameLayer
 }: LayerPanelProps) {
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+    const [editName, setEditName] = useState("");
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (editingIndex !== null && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [editingIndex]);
+
+    function startEditing(index: number, currentName: string) {
+        setEditingIndex(index);
+        setEditName(currentName);
+    }
+
+    function saveEditing() {
+        if (editingIndex !== null) {
+            if (editName.trim()) {
+                onRenameLayer(editingIndex, editName.trim());
+            }
+            setEditingIndex(null);
+            setEditName("");
+        }
+    }
+
+    function handleKeyDown(e: React.KeyboardEvent) {
+        if (e.key === "Enter") {
+            saveEditing();
+        } else if (e.key === "Escape") {
+            setEditingIndex(null);
+        }
+    }
+
     return (
-        <div className="h-40 border-t border-gray-300 bg-gray-50 p-2 flex flex-col">
-            <h4 className="text-sm font-bold mb-2">Layers</h4>
+        <div className="h-48 border-t border-gray-300 bg-gray-50 p-2 flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-bold">Layers</h4>
+                <button
+                    onClick={onAddLayer}
+                    className="px-2 py-0.5 bg-blue-500 text-white rounded text-xs hover:bg-blue-600"
+                    title="Add New Layer"
+                >
+                    + Add
+                </button>
+            </div>
             <div className="flex-1 overflow-auto space-y-1">
                 {layers.map((layer, index) => (
                     <div
@@ -28,9 +77,9 @@ export function LayerPanel({
                         onClick={() => setActiveLayerIndex(index)}
                     >
                         <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center">
+                            <div className="flex items-center flex-1 min-w-0">
                                 <button
-                                    className="mr-2 text-gray-500 hover:text-black"
+                                    className="mr-2 text-gray-500 hover:text-black flex-none"
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         onToggleVisibility(index);
@@ -38,9 +87,43 @@ export function LayerPanel({
                                 >
                                     {layer.visible ? "👁️" : "🚫"}
                                 </button>
-                                <span className={`text-sm font-medium select-none ${!layer.visible && "text-gray-400"}`}>{layer.name}</span>
+
+                                {editingIndex === index ? (
+                                    <input
+                                        ref={inputRef}
+                                        type="text"
+                                        value={editName}
+                                        onChange={(e) => setEditName(e.target.value)}
+                                        onBlur={saveEditing}
+                                        onKeyDown={handleKeyDown}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-sm font-medium border border-blue-500 rounded px-1 w-full"
+                                    />
+                                ) : (
+                                    <span
+                                        className={`text-sm font-medium select-none truncate ${!layer.visible && "text-gray-400"}`}
+                                        onDoubleClick={(e) => {
+                                            e.stopPropagation();
+                                            startEditing(index, layer.name);
+                                        }}
+                                        title="Double click to rename"
+                                    >{layer.name}</span>
+                                )}
                             </div>
-                            <div className="flex items-center space-x-1">
+                            <div className="flex items-center space-x-1 ml-2">
+                                <button
+                                    className="px-1 text-xs bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-30"
+                                    disabled={layers.length <= 1}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (confirm(`Delete layer "${layer.name}"?`)) {
+                                            onRemoveLayer(index);
+                                        }
+                                    }}
+                                    title="Delete Layer"
+                                >
+                                    🗑️
+                                </button>
                                 <button
                                     className="px-1 text-xs bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-30"
                                     disabled={index === layers.length - 1}

@@ -1,0 +1,125 @@
+import React, { useState, useEffect } from "react";
+import { type TileGroup } from "../../types";
+
+type Props = {
+    isOpen: boolean;
+    onClose: () => void;
+    onSave: (data: { name: string; role: "terrain" | "decoration"; canResize: boolean; canFlip: boolean }) => void;
+    initialData: TileGroup | null;
+};
+
+export function SmartComponentModal({ isOpen, onClose, onSave, initialData }: Props) {
+    const [name, setName] = useState("");
+    const [role, setRole] = useState<"terrain" | "decoration">("terrain");
+    const [canResize, setCanResize] = useState(true);
+    const [canFlip, setCanFlip] = useState(false);
+
+    useEffect(() => {
+        if (initialData) {
+            setName(initialData.name);
+            setRole(initialData.role || "terrain");
+            setCanResize(initialData.canResize ?? (initialData.role === "terrain"));
+            setCanFlip(initialData.canFlip ?? false);
+        }
+    }, [initialData, isOpen]);
+
+    if (!isOpen) return null;
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSave({ name, role, canResize, canFlip });
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-96">
+                <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Edit Component</h2>
+                <form onSubmit={handleSubmit} className="space-y-4">
+
+                    {/* Name */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                        <input
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            required
+                        />
+                    </div>
+
+                    {/* Role */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+                        <div className="flex gap-4">
+                            <label className="flex items-center">
+                                <input
+                                    type="radio"
+                                    checked={role === "terrain"}
+                                    onChange={() => setRole("terrain")}
+                                    className="mr-2"
+                                />
+                                <span className="text-gray-900 dark:text-gray-200">Terrain</span>
+                            </label>
+                            <label className="flex items-center">
+                                <input
+                                    type="radio"
+                                    checked={role === "decoration"}
+                                    onChange={() => setRole("decoration")}
+                                    className="mr-2"
+                                />
+                                <span className="text-gray-900 dark:text-gray-200">Decoration</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    {/* Constraints */}
+                    <div className="space-y-2">
+                        <label className="flex items-center">
+                            <input
+                                type="checkbox"
+                                checked={canResize}
+                                onChange={(e) => {
+                                    setCanResize(e.target.checked);
+                                    if (e.target.checked) setCanFlip(false); // Often mutually exclusive defaults
+                                }}
+                                className="mr-2"
+                            />
+                            <span className="text-gray-900 dark:text-gray-200">Stretchable (Repeating Pattern)</span>
+                        </label>
+
+                        {!canResize && (
+                            <label className="flex items-center pl-4">
+                                <input
+                                    type="checkbox"
+                                    checked={canFlip}
+                                    onChange={(e) => setCanFlip(e.target.checked)}
+                                    className="mr-2"
+                                />
+                                <span className="text-gray-900 dark:text-gray-200">Flippable (Random Mirror)</span>
+                            </label>
+                        )}
+                    </div>
+
+                    <div className="flex justify-end gap-2 mt-6">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                        >
+                            Save
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+    );
+}

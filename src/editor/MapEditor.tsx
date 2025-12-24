@@ -9,6 +9,8 @@ import { Palette } from "../components/editor/Palette";
 import { RecentTiles } from "../components/editor/RecentTiles";
 import { MapCanvas } from "../components/editor/MapCanvas";
 import { SmartComponents } from "../components/editor/SmartComponents";
+import { SmartComponentModal } from "../components/editor/SmartComponentModal";
+import { GenerationConfigModal } from "../components/editor/GenerationConfigModal";
 import { type TileGroup } from "../types";
 import { generatePlatformData } from "../constants/tileGroups";
 import { generateProceduralLevel } from "../utils/levelGen";
@@ -30,10 +32,15 @@ export function MapEditor() {
         renameLayer,
         tileGroups,
         addTileGroup,
-        removeTileGroup
+        removeTileGroup,
+        updateTileGroup
     } = useMapState();
 
     const [image, setImage] = useState<HTMLImageElement | null>(null);
+    const [editingGroup, setEditingGroup] = useState<TileGroup | null>(null);
+    const [showGenModal, setShowGenModal] = useState(false);
+
+    // Add effect to prevent scrolling when modal is open if needed, implies logic here.
     const [paletteWidth, setPaletteWidth] = useState(280);
     const [zoomMap, setZoomMap] = useState(1);
     const [zoomPalette, setZoomPalette] = useState(1);
@@ -672,6 +679,23 @@ export function MapEditor() {
         const name = prompt("Enter a name for this Smart Component:");
         if (!name) return;
 
+        const isDecoration = confirm("Is this a Decoration (background)? Click OK for YES, Cancel for NO (Terrain).");
+        const role = isDecoration ? "decoration" : "terrain";
+
+        // Defaults per user request:
+        // Terrain: Stretch=Yes
+        // Decoration: Stretch=No
+        const defaultCanResize = role === "terrain";
+        const canResize = confirm(`Can this component be stretched/resized? \nDefault for ${role} is ${defaultCanResize ? 'Yes' : 'No'}.\nClick OK for YES, Cancel for NO.`);
+
+        // If not resizeable, ask for flip
+        // User said: "If ... cant be stretched i want to define if it can be flipped"
+        // Also user comment: "yes" (for flippable).
+        let canFlip = false;
+        if (!canResize) {
+            canFlip = confirm("Can this component be flipped horizontally? (Random variations)\nClick OK for YES, Cancel for NO.");
+        }
+
         // Extract columns
         const getColumn = (colIndex: number) => {
             const col: number[] = [];
@@ -708,29 +732,73 @@ export function MapEditor() {
             right,
             single,
             height: sel.h,
-            preview
+            preview,
+            role,
+            canResize,
+            canFlip
         };
 
         addTileGroup(newGroup);
     }
 
+    function handleEditTileGroup(group: TileGroup) {
+        setEditingGroup(group);
+    }
+
+    function handleSaveGroup(updates: { name: string; role: "terrain" | "decoration"; canResize: boolean; canFlip: boolean }) {
+        if (editingGroup) {
+            updateTileGroup(editingGroup.id, updates);
+            setEditingGroup(null);
+        }
+    }
+
+    function _old_handleEditTileGroup(group: TileGroup) {
+        const name = prompt("Edit name:", group.name);
+        if (name === null) return; // Cancelled
+
+        const isDecoration = confirm(`Is this a Decoration? (Currently: ${group.role})\nClick OK for Decoration, Cancel for Terrain.`);
+        const role = isDecoration ? "decoration" : "terrain";
+
+        const canResize = confirm(`Can it be stretched? (Currently: ${group.canResize ? 'Yes' : 'No'})\nClick OK for Yes, Cancel for No.`);
+
+        let canFlip = group.canFlip;
+        if (!canResize) {
+            canFlip = confirm(`Can it be flipped? (Currently: ${group.canFlip ? 'Yes' : 'No'})\nClick OK for Yes, Cancel for No.`);
+        } else {
+            // If resizeable, flip is usually false for platforms (complex patterns), or handled differently?
+            // Let's force false or keep current? For platforms, usually false.
+            canFlip = false;
+        }
+
+        updateTileGroup(group.id, {
+            name: name || group.name,
+            role,
+            canResize,
+            canFlip
+        });
+    }
+
     // Fix generateProceduralLevel call to use first available group if "grass" missing
     function handleGenerateLevel() {
-        // Use active group, or default to grass/first
-        const group = activeTileGroup || tileGroups["grass"] || Object.values(tileGroups)[0];
+        setShowGenModal(true);
+    }
 
-        if (!group) {
-            alert("No Smart Components available to generate level. Please create or select one first.");
-            return;
-        }
+    function handleFinalGenerate(selectedIds: string[]) {
+        saveCheckpoint();
 
-        if (confirm(`Generate level using "${group.name}"? This will overwrite the current map.`)) {
-            saveCheckpoint();
+        // Filter groups based on selection
+        const filteredGroups: Record<string, TileGroup> = {};
+        selectedIds.forEach(id => {
+            if (tileGroups[id]) {
+                filteredGroups[id] = tileGroups[id];
+            }
+        });
 
-            const newLayers = generateProceduralLevel(mapSize.width, mapSize.height, group);
-            setLayers(newLayers);
-            setActiveLayerIndex(0);
-        }
+        const tilesPerRow = Math.floor(image?.width ? image.width / TILE_WIDTH : 8);
+        const newLayers = generateProceduralLevel(mapSize.width, mapSize.height, filteredGroups, tilesPerRow);
+        setLayers(newLayers);
+        setActiveLayerIndex(0);
+        setShowGenModal(false);
     }
 
     return (
@@ -802,6 +870,7 @@ export function MapEditor() {
                             }}
                             onCreateGroup={handleCreateTileGroup}
                             onDeleteGroup={removeTileGroup}
+                            onEditGroup={handleEditTileGroup}
                         />
                     </div>
                 </div>
@@ -885,6 +954,19 @@ export function MapEditor() {
                     />
                 </div>
             </div>
+            <SmartComponentModal
+                isOpen={!!editingGroup}
+                onClose={() => setEditingGroup(null)}
+                onSave={handleSaveGroup}
+                initialData={editingGroup}
+            />
+
+            <GenerationConfigModal
+                isOpen={showGenModal}
+                onClose={() => setShowGenModal(false)}
+                onGenerate={handleFinalGenerate}
+                tileGroups={tileGroups}
+            />
         </div>
     );
 }

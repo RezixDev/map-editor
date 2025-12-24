@@ -12,7 +12,10 @@ export const INITIAL_TILE_GROUPS: Record<string, TileGroup> = {
         right: [10],
         single: [9],
         height: 1,
-        preview: [8, 9, 10]
+        preview: [8, 9, 10],
+        role: "terrain",
+        canResize: true,
+        canFlip: false
     }
 };
 

@@ -18,4 +18,7 @@ export type TileGroup = {
     single: number[];  // Column for single-width
     height: number;
     preview: number[]; // Flat list for preview rendering
+    role: "terrain" | "decoration";
+    canResize: boolean;
+    canFlip: boolean;
 };

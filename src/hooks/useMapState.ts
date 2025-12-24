@@ -198,6 +198,15 @@ export function useMapState() {
         });
     }, [setTileGroups]);
 
+    const updateTileGroup = useCallback((id: string, updates: Partial<TileGroup>) => {
+        setTileGroups(draft => {
+            const group = draft[id];
+            if (group) {
+                Object.assign(group, updates);
+            }
+        });
+    }, [setTileGroups]);
+
 
 
     return {
@@ -218,6 +227,7 @@ export function useMapState() {
 
         tileGroups,
         addTileGroup,
-        removeTileGroup
+        removeTileGroup,
+        updateTileGroup
     };
 }

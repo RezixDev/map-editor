@@ -9,9 +9,10 @@ type SmartComponentsProps = {
     onSelectGroup: (group: TileGroup) => void;
     onCreateGroup: () => void;
     onDeleteGroup: (id: string) => void;
+    onEditGroup: (group: TileGroup) => void;
 };
 
-export function SmartComponents({ image, tileGroups, activeGroup, onSelectGroup, onCreateGroup, onDeleteGroup }: SmartComponentsProps) {
+export function SmartComponents({ image, tileGroups, activeGroup, onSelectGroup, onCreateGroup, onDeleteGroup, onEditGroup }: SmartComponentsProps) {
     // Helper to draw a preview for a group
     function GroupPreview({ group }: { group: TileGroup }) {
         const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -43,19 +44,36 @@ export function SmartComponents({ image, tileGroups, activeGroup, onSelectGroup,
                 onClick={() => onSelectGroup(group)}
             >
                 <div className="flex justify-between items-start mb-1">
-                    <div className="text-xs font-bold text-gray-700 dark:text-gray-200">{group.name}</div>
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            if (confirm(`Delete component "${group.name}"?`)) {
-                                onDeleteGroup(group.id);
-                            }
-                        }}
-                        className="text-red-500 hover:text-red-700 p-0.5"
-                        title="Delete"
-                    >
-                        ✕
-                    </button>
+                    <div className="flex items-center gap-1">
+                        <div className="text-xs font-bold text-gray-700 dark:text-gray-200">{group.name}</div>
+                        <span className={`text-[8px] px-1 rounded ${group.role === 'decoration' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'}`}>
+                            {group.role === 'decoration' ? 'DEC' : 'TER'}
+                        </span>
+                    </div>
+                    <div className="flex gap-1">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onEditGroup(group);
+                            }}
+                            className="text-gray-500 hover:text-blue-500 p-0.5"
+                            title="Edit"
+                        >
+                            ✏️
+                        </button>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Delete component "${group.name}"?`)) {
+                                    onDeleteGroup(group.id);
+                                }
+                            }}
+                            className="text-red-500 hover:text-red-700 p-0.5"
+                            title="Delete"
+                        >
+                            ✕
+                        </button>
+                    </div>
                 </div>
                 <div className="flex gap-1">
                     <canvas

@@ -623,7 +623,7 @@ export function MapEditor() {
     }
 
     return (
-        <div className="h-screen flex flex-col p-4 box-border">
+        <div className="h-screen flex flex-col p-4 box-border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
             <h1 className="text-2xl font-bold mb-4">Map Editor</h1>
 
             <Toolbar
@@ -680,7 +680,7 @@ export function MapEditor() {
                 </div>
 
                 <div
-                    className="w-1 cursor-col-resize h-full hover:bg-blue-400 bg-gray-200 flex-none transition-colors"
+                    className="w-1 cursor-col-resize h-full hover:bg-blue-400 bg-gray-200 dark:bg-gray-700 flex-none transition-colors"
                     onMouseDown={() => {
                         isResizing.current = true;
                         document.body.style.cursor = "col-resize";

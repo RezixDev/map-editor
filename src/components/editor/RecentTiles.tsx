@@ -11,7 +11,7 @@ type RecentTilesProps = {
 
 export function RecentTiles({ recentStamps, onSelect, image, activeStamp }: RecentTilesProps) {
     return (
-        <div className="flex gap-2 p-2 bg-gray-50 border-b overflow-x-auto h-12 items-center">
+        <div className="flex gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 overflow-x-auto h-12 items-center transition-colors">
             <span className="text-xs font-bold text-gray-500 mr-2 flex-none">History:</span>
             {recentStamps.map((stamp, i) => (
                 <TilePreview
@@ -86,7 +86,7 @@ function TilePreview({
     return (
         <div
             onClick={onClick}
-            className={`w-8 h-8 border rounded flex-none cursor-pointer hover:border-blue-400 bg-white ${isActive ? "border-blue-600 ring-1 ring-blue-600" : "border-gray-300"
+            className={`w-8 h-8 border rounded flex-none cursor-pointer hover:border-blue-400 bg-white dark:bg-gray-800 transition-colors ${isActive ? "border-blue-600 ring-1 ring-blue-600" : "border-gray-300 dark:border-gray-600"
                 }`}
             title={`Stamp ${stamp.x},${stamp.y} (${stamp.w}x${stamp.h})`}
         >

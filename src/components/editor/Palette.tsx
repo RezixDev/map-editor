@@ -134,7 +134,7 @@ export function Palette({ image, selection, setSelection, zoom, setZoom, isFlipp
     return (
         <div className="flex-none flex flex-col h-full" style={{ width: "100%" }}>
             <h3 className="font-bold mb-2">Palette</h3>
-            <div className="border border-gray-400 bg-gray-50 flex-1 overflow-auto">
+            <div className="border border-gray-400 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 flex-1 overflow-auto transition-colors">
                 <canvas
                     ref={canvasRef}
                     className="cursor-pointer block origin-top-left"
@@ -152,13 +152,13 @@ export function Palette({ image, selection, setSelection, zoom, setZoom, isFlipp
                     tabIndex={0}
                 />
             </div>
-            <div className="mt-2 text-sm text-gray-500">
+            <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                 Drag to select multiple tiles.
                 <br />
                 Shortcuts: B (Brush), E (Eraser), F (Fill), X (Flip)
             </div>
             <div
-                className={`mt-2 p-1 text-xs text-center border rounded ${isFlipped ? "bg-blue-100 border-blue-500 font-bold" : "bg-gray-100 text-gray-400"}`}
+                className={`mt-2 p-1 text-xs text-center border rounded transition-colors ${isFlipped ? "bg-blue-100 dark:bg-blue-900 border-blue-500 font-bold" : "bg-gray-100 dark:bg-gray-800 text-gray-400"}`}
             >
                 Flip X: {isFlipped ? "ON" : "OFF"}
             </div>

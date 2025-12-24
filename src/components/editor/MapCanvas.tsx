@@ -271,10 +271,10 @@ export function MapCanvas({
     }
 
     return (
-        <div className="border-2 border-gray-300 bg-gray-100 flex-1 overflow-auto relative rounded">
+        <div className="border-2 border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 flex-1 overflow-auto relative rounded transition-colors">
             <canvas
                 ref={canvasRef}
-                className="block bg-white shadow-sm origin-top-left"
+                className="block bg-white dark:bg-gray-900 shadow-sm origin-top-left transition-colors"
                 style={{
                     width: mapSize.width * TILE_WIDTH * zoom,
                     height: mapSize.height * TILE_HEIGHT * zoom,

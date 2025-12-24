@@ -1,6 +1,7 @@
 import { useRef, useEffect, type MouseEvent } from "react";
-import { type Layer, type SelectionRect, type Tool, type CustomBrush } from "../../types";
+import { type Layer, type SelectionRect, type Tool, type CustomBrush, type TileGroup } from "../../types";
 import { TILE_WIDTH, TILE_HEIGHT } from "../../constants";
+import { generatePlatformData } from "../../constants/tileGroups";
 
 type MapCanvasProps = {
     layers: Layer[];
@@ -13,6 +14,7 @@ type MapCanvasProps = {
     paletteSelection: SelectionRect;
     isFlipped: boolean;
     customBrush: CustomBrush | null;
+    activeTileGroup: TileGroup | null;
     cameraOffset: { x: number; y: number };
     onMouseDown: (e: MouseEvent<HTMLCanvasElement>) => void;
     onMouseMove: (e: MouseEvent<HTMLCanvasElement>) => void;
@@ -32,6 +34,7 @@ export function MapCanvas({
     paletteSelection,
     isFlipped,
     customBrush,
+    activeTileGroup,
     cameraOffset,
     onMouseDown,
     onMouseMove,
@@ -197,6 +200,32 @@ export function MapCanvas({
                     context.restore();
                 }
 
+                context.globalAlpha = 1.0;
+            } else if (currentTool === "smartBrush" && activeTileGroup) {
+                context.globalAlpha = 0.5;
+
+                // Determine width for preview
+                let width = 1;
+                const startX = selection ? selection.x * TILE_WIDTH : gridX;
+                const startY = selection ? selection.y * TILE_HEIGHT : gridY;
+
+                if (selection) {
+                    width = selection.w;
+                }
+
+                const platformData = generatePlatformData(width, activeTileGroup);
+                const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+
+                Object.entries(platformData).forEach(([key, tileData]) => {
+                    const [dx, dy] = key.split(",").map(Number);
+                    const drawX = startX + (dx * TILE_WIDTH);
+                    const drawY = startY + (dy * TILE_HEIGHT);
+
+                    const srcX = (tileData.tileId % tilesPerRow) * TILE_WIDTH;
+                    const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
+
+                    context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, drawX, drawY, TILE_WIDTH, TILE_HEIGHT);
+                });
                 context.globalAlpha = 1.0;
             }
 

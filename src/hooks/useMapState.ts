@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useImmer } from "use-immer";
-import { type Layer, type SelectionRect } from "../types";
+import { type Layer, type SelectionRect, type TileGroup } from "../types";
+import { INITIAL_TILE_GROUPS } from "../constants/tileGroups";
 
 const STORAGE_KEY = "tile_craft_editor_v1";
 
@@ -19,6 +20,7 @@ export function useMapState() {
     const [layers, setLayers] = useImmer<Layer[]>(INITIAL_LAYERS);
     const [mapSize, setMapSize] = useState(INITIAL_MAP_SIZE);
     const [recentStamps, setRecentStamps] = useImmer<SelectionRect[]>([]);
+    const [tileGroups, setTileGroups] = useImmer<Record<string, TileGroup>>(INITIAL_TILE_GROUPS);
 
     // History Stacks
     const historyPast = useRef<Layer[][]>([]);
@@ -38,6 +40,9 @@ export function useMapState() {
                     setMapSize(data.mapSize);
                     if (data.recentStamps) {
                         setRecentStamps(data.recentStamps);
+                    }
+                    if (data.tileGroups) {
+                        setTileGroups(data.tileGroups);
                     }
                 } else if (Array.isArray(data)) {
                     // Legacy fallback if just layers were saved
@@ -64,7 +69,8 @@ export function useMapState() {
                 const state = {
                     layers,
                     mapSize,
-                    recentStamps
+                    recentStamps,
+                    tileGroups
                 };
                 const json = JSON.stringify(state);
 
@@ -82,7 +88,7 @@ export function useMapState() {
         return () => {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         };
-    }, [layers, mapSize, recentStamps]);
+    }, [layers, mapSize, recentStamps, tileGroups]);
 
     const addRecentStamp = useCallback((stamp: SelectionRect) => {
         setRecentStamps(draft => {
@@ -180,6 +186,19 @@ export function useMapState() {
         });
     }, [setLayers]);
 
+    const addTileGroup = useCallback((group: TileGroup) => {
+        setTileGroups(draft => {
+            draft[group.id] = group;
+        });
+    }, [setTileGroups]);
+
+    const removeTileGroup = useCallback((id: string) => {
+        setTileGroups(draft => {
+            delete draft[id];
+        });
+    }, [setTileGroups]);
+
+
 
     return {
         layers,
@@ -195,6 +214,10 @@ export function useMapState() {
 
         addLayer,
         removeLayer,
-        renameLayer
+        renameLayer,
+
+        tileGroups,
+        addTileGroup,
+        removeTileGroup
     };
 }

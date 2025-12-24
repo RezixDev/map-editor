@@ -12,6 +12,7 @@ type ToolbarProps = {
     onLoad: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onExport: () => void;
     onUploadImage: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    onGenerate: () => void;
 };
 
 export function Toolbar({
@@ -22,7 +23,8 @@ export function Toolbar({
     onSave,
     onLoad,
     onExport,
-    onUploadImage
+    onUploadImage,
+    onGenerate
 }: ToolbarProps) {
     const { theme, setTheme } = useTheme();
 
@@ -105,6 +107,17 @@ export function Toolbar({
                     Export PNG
                 </button>
             </div>
+
+            <button
+                onClick={onGenerate}
+                className="p-2 rounded bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer mr-2"
+                title="Generate Procedural Level"
+            >
+                <div className="flex items-center gap-1">
+                    <span className="text-xs font-bold">GEN</span>
+                </div>
+            </button>
+
             <button
                 onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                 className="p-2 ml-auto rounded bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"

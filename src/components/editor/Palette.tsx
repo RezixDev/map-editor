@@ -132,7 +132,7 @@ export function Palette({ image, selection, setSelection, zoom, setZoom, isFlipp
     }
 
     return (
-        <div className="flex-none flex flex-col h-full" style={{ width: "100%" }}>
+        <div className="flex-1 flex flex-col min-h-0" style={{ width: "100%" }}>
             <h3 className="font-bold mb-2">Palette</h3>
             <div className="border border-gray-400 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 flex-1 overflow-auto transition-colors">
                 <canvas

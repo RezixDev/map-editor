@@ -8,6 +8,10 @@ import { Toolbar } from "../components/editor/Toolbar";
 import { Palette } from "../components/editor/Palette";
 import { RecentTiles } from "../components/editor/RecentTiles";
 import { MapCanvas } from "../components/editor/MapCanvas";
+import { SmartComponents } from "../components/editor/SmartComponents";
+import { type TileGroup } from "../types";
+import { generatePlatformData } from "../constants/tileGroups";
+import { generateProceduralLevel } from "../utils/levelGen";
 
 export function MapEditor() {
     const {
@@ -23,7 +27,10 @@ export function MapEditor() {
         addRecentStamp,
         addLayer,
         removeLayer,
-        renameLayer
+        renameLayer,
+        tileGroups,
+        addTileGroup,
+        removeTileGroup
     } = useMapState();
 
     const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -36,6 +43,7 @@ export function MapEditor() {
     const [activeLayerIndex, setActiveLayerIndex] = useState(0);
     const [currentTool, setCurrentTool] = useState<Tool>("brush");
     const [selection, setSelection] = useState<SelectionRect | null>(null);
+    const [activeTileGroup, setActiveTileGroup] = useState<TileGroup | null>(null);
 
     const [clipboard, setClipboard] = useState<Record<string, TileData> | null>(null);
     const [customBrush, setCustomBrush] = useState<CustomBrush | null>(null);
@@ -474,6 +482,17 @@ export function MapEditor() {
                 const h = Math.abs(start.y - gy) + 1;
                 setSelection({ x: minX, y: minY, w, h });
             }
+        } else if (currentTool === "smartBrush") {
+            if (e.type === "mousedown") {
+                selectionStart.current = { x: gx, y: gy };
+                setSelection({ x: gx, y: gy, w: 1, h: 1 });
+            } else if (isMouseDown.current && selectionStart.current) {
+                const start = selectionStart.current;
+                // Horizontal only for now
+                const w = Math.abs(start.x - gx) + 1;
+                const minX = Math.min(start.x, gx);
+                setSelection({ x: minX, y: start.y, w: w, h: 1 });
+            }
         }
     }
 
@@ -531,6 +550,23 @@ export function MapEditor() {
 
         if (currentTool === "eyedropper" && selection) {
             sampleArea(selection);
+        } else if (currentTool === "smartBrush" && selection && activeTileGroup) {
+            saveCheckpoint();
+            const width = selection.w;
+            const platformData = generatePlatformData(width, activeTileGroup);
+            const startX = selection.x;
+            const startY = selection.y;
+
+            setLayers((draft) => {
+                const activeData = draft[activeLayerIndex].data;
+                Object.entries(platformData).forEach(([key, tileData]) => {
+                    const [dx, dy] = key.split(",").map(Number);
+                    const finalX = startX + dx;
+                    const finalY = startY + dy;
+                    activeData[`${finalX},${finalY}`] = { ...tileData, flipX: false };
+                });
+            });
+            setSelection(null);
         }
     }
 
@@ -622,6 +658,79 @@ export function MapEditor() {
         a.click();
     }
 
+    function handleCreateTileGroup() {
+        if (!image) return;
+        const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+        const sel = paletteSelection;
+
+        // Validation: Must select at least 3 tiles horizontally
+        if (sel.w < 3) {
+            alert("Please select at least 3 tiles horizontally (Left, Middle..., Right) to create a group.");
+            return;
+        }
+
+        const name = prompt("Enter a name for this Smart Component:");
+        if (!name) return;
+
+        // Extract columns
+        const getColumn = (colIndex: number) => {
+            const col: number[] = [];
+            for (let y = 0; y < sel.h; y++) {
+                const tileId = (sel.y + y) * tilesPerRow + (sel.x + colIndex);
+                col.push(tileId);
+            }
+            return col;
+        };
+
+        const left = getColumn(0);
+        const right = getColumn(sel.w - 1);
+
+        const middle: number[][] = [];
+        for (let x = 1; x < sel.w - 1; x++) {
+            middle.push(getColumn(x));
+        }
+
+        // Use middle for single fallback, or just center of middle?
+        // Let's use the first middle column for single fallback
+        const single = middle.length > 0 ? middle[0] : left;
+
+        // Preview: flattened top row for simple preview
+        const preview: number[] = [];
+        for (let x = 0; x < sel.w; x++) {
+            preview.push(getColumn(x)[0]); // Top tile only for icon
+        }
+
+        const newGroup: TileGroup = {
+            id: crypto.randomUUID(),
+            name,
+            left,
+            middle,
+            right,
+            single,
+            height: sel.h,
+            preview
+        };
+
+        addTileGroup(newGroup);
+    }
+
+    // Fix generateProceduralLevel call to use first available group if "grass" missing
+    function handleGenerateLevel() {
+        if (confirm("This will overwrite the current map. Continue?")) {
+            saveCheckpoint();
+            // Use grass if available, else first one
+            const group = tileGroups["grass"] || Object.values(tileGroups)[0];
+            if (!group) {
+                alert("No Smart Components available to generate level.");
+                return;
+            }
+
+            const newLayers = generateProceduralLevel(mapSize.width, mapSize.height, group);
+            setLayers(newLayers);
+            setActiveLayerIndex(0);
+        }
+    }
+
     return (
         <div className="h-screen flex flex-col p-4 box-border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
             <h1 className="text-2xl font-bold mb-4">Map Editor</h1>
@@ -635,6 +744,7 @@ export function MapEditor() {
                 onLoad={handleLoadMap}
                 onExport={handleExportPng}
                 onUploadImage={handleUploadImage}
+                onGenerate={handleGenerateLevel}
             />
 
             <RecentTiles
@@ -677,6 +787,21 @@ export function MapEditor() {
                             // If Palette allows choosing new rect, it works.
                         }}
                     />
+                    <div className="flex-1 mt-2 border-t border-gray-300 dark:border-gray-700 pt-2 min-h-0">
+                        <SmartComponents
+                            image={image}
+                            tileGroups={tileGroups}
+                            activeGroup={activeTileGroup}
+                            onSelectGroup={(group) => {
+                                setActiveTileGroup(group);
+                                setCurrentTool("smartBrush");
+                                setSelection(null);
+                                setPaletteSelection({ x: 0, y: 0, w: 0, h: 0 }); // Clear palette selection
+                            }}
+                            onCreateGroup={handleCreateTileGroup}
+                            onDeleteGroup={removeTileGroup}
+                        />
+                    </div>
                 </div>
 
                 <div
@@ -702,6 +827,7 @@ export function MapEditor() {
                         paletteSelection={paletteSelection}
                         isFlipped={isFlipped}
                         customBrush={customBrush}
+                        activeTileGroup={activeTileGroup}
                         onMouseDown={handleMapMouseDown}
                         onMouseMove={handleMapMouseMove}
                         onMouseUp={handleMapMouseUp}

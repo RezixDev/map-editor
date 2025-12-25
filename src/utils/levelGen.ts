@@ -47,123 +47,113 @@ export function generateProceduralLevel(
     // Default to first if none
     const mainTerrain = terrainGroups.length > 0 ? terrainGroups[0] : Object.values(allGroups)[0];
 
-    // --- Pass 1: Terrain Walker ---
-    while (currentX < width - 5) {
-        // Platform width (random between 3 and 8)
-        const platWidth = Math.floor(Math.random() * 6) + 3;
+    // --- Pass 1: Terrain Walker (Multi-Pass) ---
+    // We run a walker for EACH selected terrain group to allow layering (e.g. Sky Islands + Ground)
+    terrainGroups.forEach(terrainGroup => {
+        let currentX = 2;
+        // Determine Bounds based on Alignment
+        let yMin = 4;
+        let yMax = height - 4;
 
-        // Generate platform data
-        // Cycle through terrain groups? Or stick to one per level?
-        // Let's stick to mainTerrain for consistency, or random?
-        // For "Style", usually one main terrain type per level is better.
-        // Pick a random terrain group from the available selection
-        // This supports mixing different styles if multiple were selected
-        const currentTerrain = terrainGroups[Math.floor(Math.random() * terrainGroups.length)] || mainTerrain;
-        if (!currentTerrain) break;
+        const alignments = terrainGroup.verticalAlignments ||
+            (terrainGroup.verticalAlignment ? [terrainGroup.verticalAlignment] : ["top", "bottom"]); // default to full
 
-        const platformData = generatePlatformData(platWidth, currentTerrain);
+        const isTop = alignments.includes("top");
+        const isBottom = alignments.includes("bottom");
 
-        // Place platform
-        Object.entries(platformData).forEach(([key, tile]) => {
-            const [dx, dy] = key.split(",").map(Number);
-            const gx = currentX + dx;
-            const gy = currentY + dy;
+        if (isTop && !isBottom) {
+            yMax = Math.floor(height * 0.5);
+        } else if (!isTop && isBottom) {
+            yMin = Math.floor(height * 0.5);
+        }
+        // If both or neither, use full height (4 to H-4)
 
-            // Add to main layer
-            mainLayer.data[`${gx},${gy}`] = { ...tile, flipX: false };
+        // Determine Start Y
+        let currentY = Math.floor((yMin + yMax) / 2);
 
-            // User requested to remove automatic grass decoration on top.
-            // So we only place the Smart Component tiles themselves.
+        // Density Logic
+        const density = terrainGroup.density || 5;
+        // Low Density (1) = Big Gaps. High Density (10) = Small Gaps.
+        // Base Gap: 2-4.
+        // Density 1: MinGap 6, MaxGap 10.
+        // Density 10: MinGap 1, MaxGap 3.
+        const minDistant = Math.max(1, 7 - Math.ceil(density / 1.5));
+        const maxDistant = Math.max(minDistant + 1, 12 - density);
 
-            // Add simple collision block (id 999 or similar, assuming red square for now or just generic)
-            // For now, let's assume tile ID 0 is collision or just reuse a placeholder
-            // Ideally we have a specific collision tile. Let's use ID 0 for now as a placeholder.
-            // Add simple collision block (id 999 or similar, assuming red square for now or just generic)
-            // For now, let's assume tile ID 0 is collision or just reuse a placeholder
-            // Ideally we have a specific collision tile. Let's use ID 0 for now as a placeholder.
-            collisionLayer.data[`${gx},${gy}`] = { tileId: 0, flipX: false };
-        });
+        while (currentX < width - 5) {
+            // Platform width (random between 3 and 8)
+            const platWidth = Math.floor(Math.random() * 6) + 3;
+            // Generate platform data
+            const platformData = generatePlatformData(platWidth, terrainGroup);
 
-        // --- Terrain Decoration Placement ---
-        if (terrainDecoGroups.length > 0) {
-            // Iterate over the top surface valid positions
-            // Platform width is platWidth. key uses relative coordinates.
-            // We need to find the "top" tiles. Our generatePlatformData usually generates a flat top at dy=0 or similar.
-            // Let's assume for now the platform is a simple block and the top is at relative y=0.
+            // Place platform
+            Object.entries(platformData).forEach(([key, tile]) => {
+                const [dx, dy] = key.split(",").map(Number);
+                const gx = currentX + dx;
+                const gy = currentY + dy;
 
-            // We iterate from dx=0 to platWidth-1
-            for (let dx = 0; dx < platWidth; dx++) {
-                // Determine probability based on density
-                // If we pick a random group first, we can use its density.
-                // Or we iterate likelihood of ANY decoration?
-                // Let's pick a random group first, then check its density check.
-                const randomGroup = terrainDecoGroups[Math.floor(Math.random() * terrainDecoGroups.length)];
-                const density = randomGroup.density || 5;
-                // Chance: Density 5 = 30%. Density 1 = 6%. Density 10 = 60%.
-                const chance = (density / 5) * 0.3;
+                // Bounds Check for individual tiles (safety)
+                if (gy >= 0 && gy < height) {
+                    mainLayer.data[`${gx},${gy}`] = { ...tile, flipX: false };
+                    collisionLayer.data[`${gx},${gy}`] = { tileId: 0, flipX: false };
+                }
+            });
 
-                if (Math.random() < chance) {
-                    const decoGroup = randomGroup;
+            // --- Terrain Decoration Placement ---
+            if (terrainDecoGroups.length > 0) {
+                for (let dx = 0; dx < platWidth; dx++) {
+                    const randomGroup = terrainDecoGroups[Math.floor(Math.random() * terrainDecoGroups.length)];
+                    const decoDensity = randomGroup.density || 5;
+                    const chance = (decoDensity / 5) * 0.3;
 
-                    // Check if it fits (width)
-                    // If deco width > remaining width, skip?
-                    // Or just let it overhang? Let's check width.
-                    // For single tile decos (flowers), width is 1.
-                    const decoWidth = decoGroup.preview.length; // Use preview length as proxy for width
+                    if (Math.random() < chance) {
+                        const decoGroup = randomGroup;
+                        const decoW = decoGroup.preview.length;
 
-                    if (dx + decoWidth <= platWidth) {
-                        // Generate data
-                        const decoData = generatePlatformData(decoWidth, decoGroup);
-                        const topY = currentY; // Top of platform
+                        // Ensure decoration doesn't hang off right side
+                        if (dx + decoW <= platWidth) {
+                            const startDecoY = -1; // Just above platform
+                            const decoData = generatePlatformData(decoW, decoGroup);
 
-                        // Place decoration ABOVE platform. Platform top is at currentY.
-                        // So decoration bottom should be at currentY - 1.
-                        // generatePlatformData returns data starting at 0,0 going down to height-1.
-                        // So we want the bottom of decoration at topY - 1.
-                        // decoration height is decoGroup.height.
-                        // So decoration starts at (topY - 1) - (decoGroup.height - 1) = topY - decoGroup.height.
+                            // Fix: Flip logic must be applied to the OBJECT, not per tile
+                            const shouldFlip = decoGroup.canFlip && Math.random() < 0.5;
 
-                        const startDecoY = topY - decoGroup.height;
+                            Object.entries(decoData).forEach(([dKey, dTile]) => {
+                                const [ddx, ddy] = dKey.split(",").map(Number);
+                                // Mirror X if flipped
+                                const finalDdx = shouldFlip ? (decoW - 1 - ddx) : ddx;
 
-                        const shouldFlip = decoGroup.canFlip && Math.random() < 0.5;
-                        let placed = false;
+                                const dgx = currentX + dx + finalDdx;
+                                const dgy = currentY + startDecoY + ddy;
 
-                        Object.entries(decoData).forEach(([dKey, dTile]) => {
-                            const [ddx, ddy] = dKey.split(",").map(Number);
+                                if (dgy >= 0 && dgy < height) {
+                                    // Place on Main Layer (foreground decoration) or Background?
+                                    // Usually "Flowers" are non-colliding (Background layer) or Main layer but non-colliding?
+                                    // If they are "Smart Components", they are tiles.
+                                    // Let's put them on Main Layer but NO Collision.
+                                    mainLayer.data[`${dgx},${dgy}`] = { ...dTile, flipX: shouldFlip };
+                                }
+                            });
 
-                            // Flip Logic: Mirror X position if flipped
-                            const finalDdx = shouldFlip ? (decoWidth - 1 - ddx) : ddx;
-
-                            const finalX = currentX + dx + finalDdx;
-                            const finalY = startDecoY + ddy;
-
-                            // Check collision with main layer (don't overwrite terrain or other decos)
-                            if (!mainLayer.data[`${finalX},${finalY}`]) {
-                                mainLayer.data[`${finalX},${finalY}`] = { ...dTile, flipX: shouldFlip };
-                                placed = true;
-                            }
-                        });
-
-                        if (placed) {
-                            // If we placed an object, skip its width to avoid self-overlap
-                            dx += decoWidth - 1;
+                            // Skip ahead by width of decoration to avoid stacking overlapping decorations
+                            // dx += decoW - 1; // Optional
                         }
                     }
                 }
             }
+
+            // Move Walker
+            currentX += platWidth + Math.floor(Math.random() * (maxDistant - minDistant + 1)) + minDistant;
+
+            // Y Variation
+            const yChange = Math.floor(Math.random() * 5) - 2; // -2 to +2
+            currentY += yChange;
+
+            // Clamp Y
+            if (currentY < yMin) currentY = yMin;
+            if (currentY > yMax) currentY = yMax;
         }
-
-        // Move Walker
-        currentX += platWidth + Math.floor(Math.random() * (maxDistant - minDistant + 1)) + minDistant;
-
-        // Randomize Y slightly
-        const yChange = Math.floor(Math.random() * 5) - 2; // -2 to +2
-        currentY += yChange;
-
-        // Clamp Y
-        if (currentY < minHeight) currentY = minHeight;
-        if (currentY > maxHeight) currentY = maxHeight;
-    }
+    });
 
     // --- Pass 2: Decorations (Background) ---
     // Split into Top (Clouds) and Bottom (Backgrounds) using verticalAlignments

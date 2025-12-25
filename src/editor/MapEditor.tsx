@@ -746,7 +746,7 @@ export function MapEditor() {
         setEditingGroup(group);
     }
 
-    function handleSaveGroup(updates: { name: string; role: "terrain" | "decoration" | "terrain-decoration"; canResize: boolean; canFlip: boolean; allowInGeneration: boolean }) {
+    function handleSaveGroup(updates: { name: string; role: "terrain" | "decoration" | "terrain-decoration"; canResize: boolean; canFlip: boolean; allowInGeneration: boolean; verticalAlignments?: ("top" | "bottom")[]; density?: number }) {
         if (editingGroup) {
             updateTileGroup(editingGroup.id, updates);
             setEditingGroup(null);

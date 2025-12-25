@@ -4,7 +4,7 @@ import { type TileGroup } from "../../types";
 type Props = {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (data: { name: string; role: "terrain" | "decoration" | "terrain-decoration"; canResize: boolean; canFlip: boolean; allowInGeneration: boolean }) => void;
+    onSave: (data: { name: string; role: "terrain" | "decoration" | "terrain-decoration"; canResize: boolean; canFlip: boolean; allowInGeneration: boolean; verticalAlignments?: ("top" | "bottom")[]; density?: number }) => void;
     initialData: TileGroup | null;
 };
 
@@ -14,6 +14,8 @@ export function SmartComponentModal({ isOpen, onClose, onSave, initialData }: Pr
     const [canResize, setCanResize] = useState(true);
     const [canFlip, setCanFlip] = useState(false);
     const [allowInGeneration, setAllowInGeneration] = useState(true);
+    const [verticalAlignments, setVerticalAlignments] = useState<("top" | "bottom")[]>(["top"]);
+    const [density, setDensity] = useState(5);
 
     useEffect(() => {
         if (initialData) {
@@ -22,6 +24,15 @@ export function SmartComponentModal({ isOpen, onClose, onSave, initialData }: Pr
             setCanResize(initialData.canResize ?? (initialData.role === "terrain"));
             setCanFlip(initialData.canFlip ?? false);
             setAllowInGeneration(initialData.allowInGeneration ?? true);
+            // Migration/Fallback: check verticalAlignment (old) if verticalAlignments missing
+            if (initialData.verticalAlignments) {
+                setVerticalAlignments(initialData.verticalAlignments);
+            } else if ((initialData as any).verticalAlignment) {
+                setVerticalAlignments([(initialData as any).verticalAlignment]);
+            } else {
+                setVerticalAlignments(["top", "bottom"]); // Default to both? Or just top. Let's do both for terrain usually.
+            }
+            setDensity(initialData.density || 5);
         }
     }, [initialData, isOpen]);
 
@@ -29,7 +40,16 @@ export function SmartComponentModal({ isOpen, onClose, onSave, initialData }: Pr
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave({ name, role, canResize, canFlip, allowInGeneration });
+        onSave({
+            name,
+            role,
+            canResize,
+            canFlip,
+            allowInGeneration,
+            allowInGeneration,
+            verticalAlignments: (role === "decoration" || role === "terrain" || role === "terrain-decoration") ? verticalAlignments : undefined,
+            density: (role === "decoration" || role === "terrain-decoration" || role === "terrain") ? density : undefined
+        });
         onClose();
     };
 
@@ -142,6 +162,74 @@ export function SmartComponentModal({ isOpen, onClose, onSave, initialData }: Pr
                             Save
                         </button>
                     </div>
+
+                    {/* Vertical Alignment and Density (Decoration and Terrain) */}
+                    {(role === "decoration" || role === "terrain-decoration" || role === "terrain") && (
+                        <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4 space-y-4">
+
+                            {/* Vertical Alignment (Decoration & Terrain) */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Vertical Alignment
+                                </label>
+                                <div className="flex gap-4">
+                                    <label className="flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={verticalAlignments.includes("top")}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    setVerticalAlignments([...verticalAlignments, "top"]);
+                                                } else {
+                                                    setVerticalAlignments(verticalAlignments.filter(a => a !== "top"));
+                                                }
+                                            }}
+                                            className="mr-2"
+                                        />
+                                        <span className="text-gray-900 dark:text-gray-200">Top (Sky)</span>
+                                    </label>
+                                    <label className="flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={verticalAlignments.includes("bottom")}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    setVerticalAlignments([...verticalAlignments, "bottom"]);
+                                                } else {
+                                                    setVerticalAlignments(verticalAlignments.filter(a => a !== "bottom"));
+                                                }
+                                            }}
+                                            className="mr-2"
+                                        />
+                                        <span className="text-gray-900 dark:text-gray-200">Bottom (Ground)</span>
+                                    </label>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Select where this component can generate. Select both for full coverage.
+                                </p>
+                            </div>
+
+                            {/* Density Slider */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Density: {density}
+                                </label>
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="10"
+                                    value={density}
+                                    onChange={(e) => setDensity(Number(e.target.value))}
+                                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                />
+                                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                    <span>Sparse (1)</span>
+                                    <span>Medium (5)</span>
+                                    <span>Dense (10)</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                 </form>
             </div>

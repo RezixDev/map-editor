@@ -93,9 +93,17 @@ export function generateProceduralLevel(
 
             // We iterate from dx=0 to platWidth-1
             for (let dx = 0; dx < platWidth; dx++) {
-                // 30% chance to place a decoration per tile?
-                if (Math.random() < 0.3) {
-                    const decoGroup = terrainDecoGroups[Math.floor(Math.random() * terrainDecoGroups.length)];
+                // Determine probability based on density
+                // If we pick a random group first, we can use its density.
+                // Or we iterate likelihood of ANY decoration?
+                // Let's pick a random group first, then check its density check.
+                const randomGroup = terrainDecoGroups[Math.floor(Math.random() * terrainDecoGroups.length)];
+                const density = randomGroup.density || 5;
+                // Chance: Density 5 = 30%. Density 1 = 6%. Density 10 = 60%.
+                const chance = (density / 5) * 0.3;
+
+                if (Math.random() < chance) {
+                    const decoGroup = randomGroup;
 
                     // Check if it fits (width)
                     // If deco width > remaining width, skip?
@@ -158,56 +166,167 @@ export function generateProceduralLevel(
     }
 
     // --- Pass 2: Decorations (Background) ---
-    // Moved after Terrain so we can check for collisions with terrain
+    // Split into Top (Clouds) and Bottom (Backgrounds) using verticalAlignments
     if (decoGroups.length > 0) {
-        const cloudCount = Math.floor((width * height) / 100); // Lower density for full objects
-        for (let i = 0; i < cloudCount; i++) {
-            const cx = Math.floor(Math.random() * (width - 2));
-            // Restrict clouds to top 30% of map to avoid overlapping with ground
-            const cy = Math.floor(Math.random() * (height - 2)); // Allow full range, but check collision
+        // Filter based on inclusion in verticalAlignments array.
+        // If undefined, default to both? Or just top? Let's assume undefined = 'top' for back-compat or just both.
+        // Actually, previous default was 'top' implicitly if missing.
+        // Let's check:
+        const topDecos = decoGroups.filter(g =>
+            g.verticalAlignments?.includes("top") ||
+            (!g.verticalAlignments && (!g.verticalAlignment || g.verticalAlignment === "top")) // fallback
+        );
+        const bottomDecos = decoGroups.filter(g =>
+            g.verticalAlignments?.includes("bottom") ||
+            (g.verticalAlignment === "bottom") // fallback
+        );
 
-            // Pick a random decoration group
-            const deco = decoGroups[Math.floor(Math.random() * decoGroups.length)];
+        // Top Loop (0 to 50% height)
+        if (topDecos.length > 0) {
+            topDecos.forEach(deco => {
+                const density = deco.density || 5;
+                const count = Math.floor((width * height * (density / 5)) / 100);
 
-            // Generate data for it
-            // If !canResize, we must use its original width (preview length is a good proxy for original selection width)
-            let decoW = 3;
-            if (!deco.canResize) {
-                decoW = deco.preview.length;
-            } else {
-                // Random width 2-4 for resizable decos
-                decoW = Math.floor(Math.random() * 3) + 2;
-            }
+                // Track placed items for this group/pass to avoid clumping
+                // We should probably track ALL placed items in this pass, but per-group is minimal scattering.
+                // Better: Track all decorations in a shared list if we want them to avoid each other?
+                // For now, let's track per group to avoid self-clumping, 
+                // but usually user implies "clouds" shouldn't clump with "clouds".
+                // If we have multiple cloud types, they should probably avoid each other too.
+                // Let's keep it simple: Per-group scattering for now, or use a local list for this loop.
+                const placedItems: { cx: number, cy: number }[] = [];
 
-            const decoData = generatePlatformData(decoW, deco);
+                for (let i = 0; i < count; i++) {
+                    let cx = 0;
+                    let cy = 0;
+                    let attempts = 0;
+                    const maxAttempts = 10;
+                    const minDist = Math.max(3, 15 - density); // Density 1 -> Dist 14. Density 10 -> Dist 5.
 
-            // Flip Logic
-            const shouldFlip = deco.canFlip && Math.random() < 0.5;
+                    while (attempts < maxAttempts) {
+                        cx = Math.floor(Math.random() * (width - 2));
+                        cy = Math.floor(Math.random() * (height * 0.5)); // Upper 50%
 
-            // Check overlap with Background AND Main Terrain
-            let overlaps = false;
-            const tempPlacement: { x: number, y: number, tile: any, flip: boolean }[] = [];
+                        // Check distance
+                        let tooClose = false;
+                        for (const item of placedItems) {
+                            const dist = Math.sqrt(Math.pow(cx - item.cx, 2) + Math.pow(cy - item.cy, 2));
+                            if (dist < minDist) {
+                                tooClose = true;
+                                break;
+                            }
+                        }
 
-            Object.entries(decoData).forEach(([key, tile]) => {
-                const [dx, dy] = key.split(",").map(Number);
+                        if (!tooClose) break;
+                        attempts++;
+                    }
 
-                // If flipped, invert X relative to width
-                const finalDx = shouldFlip ? (decoW - 1 - dx) : dx;
+                    if (attempts >= maxAttempts) continue; // Skip if we couldn't find a spot
 
-                const bgX = cx + finalDx;
-                const bgY = cy + dy;
+                    let decoW = 3;
+                    if (!deco.canResize) {
+                        decoW = deco.preview.length;
+                    } else {
+                        decoW = Math.floor(Math.random() * 3) + 2;
+                    }
 
-                if (backgroundLayer.data[`${bgX},${bgY}`]) overlaps = true; // Overlaps other BG
-                if (mainLayer.data[`${bgX},${bgY}`]) overlaps = true; // Overlaps Terrain
+                    const decoData = generatePlatformData(decoW, deco);
+                    const shouldFlip = deco.canFlip && Math.random() < 0.5;
+                    let overlaps = false;
+                    const tempPlacement: { x: number, y: number, tile: any, flip: boolean }[] = [];
 
-                tempPlacement.push({ x: bgX, y: bgY, tile, flip: shouldFlip });
+                    Object.entries(decoData).forEach(([key, tile]) => {
+                        const [dx, dy] = key.split(",").map(Number);
+                        const finalDx = shouldFlip ? (decoW - 1 - dx) : dx;
+                        const bgX = cx + finalDx;
+                        const bgY = cy + dy;
+
+                        if (backgroundLayer.data[`${bgX},${bgY}`]) overlaps = true;
+                        if (mainLayer.data[`${bgX},${bgY}`]) overlaps = true;
+
+                        tempPlacement.push({ x: bgX, y: bgY, tile, flip: shouldFlip });
+                    });
+
+                    if (!overlaps) {
+                        tempPlacement.forEach(p => {
+                            backgroundLayer.data[`${p.x},${p.y}`] = { ...p.tile, flipX: p.flip };
+                        });
+                        placedItems.push({ cx, cy });
+                    }
+                }
             });
+        }
 
-            if (!overlaps) {
-                tempPlacement.forEach(p => {
-                    backgroundLayer.data[`${p.x},${p.y}`] = { ...p.tile, flipX: p.flip };
-                });
-            }
+        // Bottom Loop (50% to 100% height)
+        if (bottomDecos.length > 0) {
+            bottomDecos.forEach(deco => {
+                const density = deco.density || 5;
+                // Lower density for bottom by default usually, but let's stick to the same formula
+                // Density 5 = (W*H)/150 (from previous code).
+                // Let's use (W*H * (density/5)) / 150
+                const count = Math.floor((width * height * (density / 5)) / 150);
+                const placedItems: { cx: number, cy: number }[] = [];
+
+                for (let i = 0; i < count; i++) {
+                    let cx = 0;
+                    let cy = 0;
+                    let attempts = 0;
+                    const maxAttempts = 10;
+                    const minDist = Math.max(3, 15 - density);
+
+                    while (attempts < maxAttempts) {
+                        cx = Math.floor(Math.random() * (width - 2));
+                        const startY = Math.floor(height * 0.5);
+                        cy = startY + Math.floor(Math.random() * (height * 0.5 - 2)); // Lower 50%
+
+                        // Check distance
+                        let tooClose = false;
+                        for (const item of placedItems) {
+                            const dist = Math.sqrt(Math.pow(cx - item.cx, 2) + Math.pow(cy - item.cy, 2));
+                            if (dist < minDist) {
+                                tooClose = true;
+                                break;
+                            }
+                        }
+
+                        if (!tooClose) break;
+                        attempts++;
+                    }
+
+                    if (attempts >= maxAttempts) continue;
+
+                    let decoW = 3;
+                    if (!deco.canResize) {
+                        decoW = deco.preview.length;
+                    } else {
+                        decoW = Math.floor(Math.random() * 3) + 2;
+                    }
+
+                    const decoData = generatePlatformData(decoW, deco);
+                    const shouldFlip = deco.canFlip && Math.random() < 0.5;
+                    let overlaps = false;
+                    const tempPlacement: { x: number, y: number, tile: any, flip: boolean }[] = [];
+
+                    Object.entries(decoData).forEach(([key, tile]) => {
+                        const [dx, dy] = key.split(",").map(Number);
+                        const finalDx = shouldFlip ? (decoW - 1 - dx) : dx;
+                        const bgX = cx + finalDx;
+                        const bgY = cy + dy;
+
+                        if (backgroundLayer.data[`${bgX},${bgY}`]) overlaps = true;
+                        if (mainLayer.data[`${bgX},${bgY}`]) overlaps = true;
+
+                        tempPlacement.push({ x: bgX, y: bgY, tile, flip: shouldFlip });
+                    });
+
+                    if (!overlaps) {
+                        tempPlacement.forEach(p => {
+                            backgroundLayer.data[`${p.x},${p.y}`] = { ...p.tile, flipX: p.flip };
+                        });
+                        placedItems.push({ cx, cy });
+                    }
+                }
+            });
         }
     }
 

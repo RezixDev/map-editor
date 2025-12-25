@@ -22,4 +22,7 @@ export type TileGroup = {
     canResize: boolean;
     canFlip: boolean;
     allowInGeneration?: boolean;
+    verticalAlignment?: "top" | "bottom"; // Deprecated, kept for reading old data if needed but ideally we migrate
+    verticalAlignments?: ("top" | "bottom")[]; // Changed from single value
+    density?: number; // 1-10
 };

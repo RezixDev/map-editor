@@ -745,7 +745,7 @@ export function MapEditor() {
         setEditingGroup(group);
     }
 
-    function handleSaveGroup(updates: { name: string; role: "terrain" | "decoration"; canResize: boolean; canFlip: boolean }) {
+    function handleSaveGroup(updates: { name: string; role: "terrain" | "decoration"; canResize: boolean; canFlip: boolean; allowInGeneration: boolean }) {
         if (editingGroup) {
             updateTileGroup(editingGroup.id, updates);
             setEditingGroup(null);

@@ -4,7 +4,7 @@ import { type TileGroup } from "../../types";
 type Props = {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (data: { name: string; role: "terrain" | "decoration"; canResize: boolean; canFlip: boolean }) => void;
+    onSave: (data: { name: string; role: "terrain" | "decoration"; canResize: boolean; canFlip: boolean; allowInGeneration: boolean }) => void;
     initialData: TileGroup | null;
 };
 
@@ -13,6 +13,7 @@ export function SmartComponentModal({ isOpen, onClose, onSave, initialData }: Pr
     const [role, setRole] = useState<"terrain" | "decoration">("terrain");
     const [canResize, setCanResize] = useState(true);
     const [canFlip, setCanFlip] = useState(false);
+    const [allowInGeneration, setAllowInGeneration] = useState(true);
 
     useEffect(() => {
         if (initialData) {
@@ -20,6 +21,7 @@ export function SmartComponentModal({ isOpen, onClose, onSave, initialData }: Pr
             setRole(initialData.role || "terrain");
             setCanResize(initialData.canResize ?? (initialData.role === "terrain"));
             setCanFlip(initialData.canFlip ?? false);
+            setAllowInGeneration(initialData.allowInGeneration ?? true);
         }
     }, [initialData, isOpen]);
 
@@ -27,7 +29,7 @@ export function SmartComponentModal({ isOpen, onClose, onSave, initialData }: Pr
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave({ name, role, canResize, canFlip });
+        onSave({ name, role, canResize, canFlip, allowInGeneration });
         onClose();
     };
 
@@ -100,6 +102,20 @@ export function SmartComponentModal({ isOpen, onClose, onSave, initialData }: Pr
                                 <span className="text-gray-900 dark:text-gray-200">Flippable (Random Mirror)</span>
                             </label>
                         )}
+
+                        {/* Generation Toggle */}
+                        <label className="flex items-center pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+                            <input
+                                type="checkbox"
+                                checked={allowInGeneration}
+                                onChange={(e) => setAllowInGeneration(e.target.checked)}
+                                className="mr-2"
+                            />
+                            <div className="flex flex-col">
+                                <span className="text-gray-900 dark:text-gray-200">Allow in Generation</span>
+                                <span className="text-xs text-gray-500">Enable specifically for procedural level generation</span>
+                            </div>
+                        </label>
                     </div>
 
                     <div className="flex justify-end gap-2 mt-6">

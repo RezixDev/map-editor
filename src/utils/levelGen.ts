@@ -110,9 +110,12 @@ export function generateProceduralLevel(
         // Cycle through terrain groups? Or stick to one per level?
         // Let's stick to mainTerrain for consistency, or random?
         // For "Style", usually one main terrain type per level is better.
-        if (!mainTerrain) break;
+        // Pick a random terrain group from the available selection
+        // This supports mixing different styles if multiple were selected
+        const currentTerrain = terrainGroups[Math.floor(Math.random() * terrainGroups.length)] || mainTerrain;
+        if (!currentTerrain) break;
 
-        const platformData = generatePlatformData(platWidth, mainTerrain);
+        const platformData = generatePlatformData(platWidth, currentTerrain);
 
         // Place platform
         Object.entries(platformData).forEach(([key, tile]) => {

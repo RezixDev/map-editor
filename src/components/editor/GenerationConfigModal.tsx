@@ -21,8 +21,8 @@ export function GenerationConfigModal({ isOpen, onClose, onGenerate, tileGroups 
 
     if (!isOpen) return null;
 
-    const terrainGroups = Object.values(tileGroups).filter(g => g.role === "terrain");
-    const decoGroups = Object.values(tileGroups).filter(g => g.role === "decoration");
+    const terrainGroups = Object.values(tileGroups).filter(g => g.role === "terrain" && g.allowInGeneration !== false);
+    const decoGroups = Object.values(tileGroups).filter(g => g.role === "decoration" && g.allowInGeneration !== false);
 
     const toggleId = (id: string) => {
         const next = new Set(selectedIds);

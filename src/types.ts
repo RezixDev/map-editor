@@ -21,4 +21,5 @@ export type TileGroup = {
     role: "terrain" | "decoration";
     canResize: boolean;
     canFlip: boolean;
+    allowInGeneration?: boolean;
 };

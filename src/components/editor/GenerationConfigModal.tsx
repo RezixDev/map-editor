@@ -14,8 +14,11 @@ export function GenerationConfigModal({ isOpen, onClose, onGenerate, tileGroups 
     // Initialize selection when opening
     useEffect(() => {
         if (isOpen) {
-            // Default select all
-            setSelectedIds(new Set(Object.keys(tileGroups)));
+            // Default select all ALLOWED groups
+            const allowedIds = Object.values(tileGroups)
+                .filter(g => g.allowInGeneration !== false)
+                .map(g => g.id);
+            setSelectedIds(new Set(allowedIds));
         }
     }, [isOpen, tileGroups]);
 
@@ -23,6 +26,7 @@ export function GenerationConfigModal({ isOpen, onClose, onGenerate, tileGroups 
 
     const terrainGroups = Object.values(tileGroups).filter(g => g.role === "terrain" && g.allowInGeneration !== false);
     const decoGroups = Object.values(tileGroups).filter(g => g.role === "decoration" && g.allowInGeneration !== false);
+    const terrainDecoGroups = Object.values(tileGroups).filter(g => g.role === "terrain-decoration" && g.allowInGeneration !== false);
 
     const toggleId = (id: string) => {
         const next = new Set(selectedIds);
@@ -73,6 +77,15 @@ export function GenerationConfigModal({ isOpen, onClose, onGenerate, tileGroups 
                         {decoGroups.length === 0 && <p className="text-gray-400 italic text-sm">No decoration components found.</p>}
                         <div className="space-y-1">
                             {decoGroups.map(renderGroupItem)}
+                        </div>
+                    </div>
+
+                    {/* Terrain Decoration Section */}
+                    <div className="mt-6">
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Terrain Decorations (On Top)</h3>
+                        {terrainDecoGroups.length === 0 && <p className="text-gray-400 italic text-sm">No terrain decoration components found.</p>}
+                        <div className="space-y-1">
+                            {terrainDecoGroups.map(renderGroupItem)}
                         </div>
                     </div>
 

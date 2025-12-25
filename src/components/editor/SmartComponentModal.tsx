@@ -4,13 +4,13 @@ import { type TileGroup } from "../../types";
 type Props = {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (data: { name: string; role: "terrain" | "decoration"; canResize: boolean; canFlip: boolean; allowInGeneration: boolean }) => void;
+    onSave: (data: { name: string; role: "terrain" | "decoration" | "terrain-decoration"; canResize: boolean; canFlip: boolean; allowInGeneration: boolean }) => void;
     initialData: TileGroup | null;
 };
 
 export function SmartComponentModal({ isOpen, onClose, onSave, initialData }: Props) {
     const [name, setName] = useState("");
-    const [role, setRole] = useState<"terrain" | "decoration">("terrain");
+    const [role, setRole] = useState<"terrain" | "decoration" | "terrain-decoration">("terrain");
     const [canResize, setCanResize] = useState(true);
     const [canFlip, setCanFlip] = useState(false);
     const [allowInGeneration, setAllowInGeneration] = useState(true);
@@ -72,6 +72,15 @@ export function SmartComponentModal({ isOpen, onClose, onSave, initialData }: Pr
                                     className="mr-2"
                                 />
                                 <span className="text-gray-900 dark:text-gray-200">Decoration</span>
+                            </label>
+                            <label className="flex items-center">
+                                <input
+                                    type="radio"
+                                    checked={role === "terrain-decoration"}
+                                    onChange={() => setRole("terrain-decoration")}
+                                    className="mr-2"
+                                />
+                                <span className="text-gray-900 dark:text-gray-200">Terrain Decoration (On Top)</span>
                             </label>
                         </div>
                     </div>

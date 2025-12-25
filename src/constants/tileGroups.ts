@@ -45,10 +45,17 @@ export function generatePlatformData(width: number, group: TileGroup): Record<st
     addColumn(0, group.left);
 
     // Middle Sections
+    // Middle Sections
     for (let x = 1; x < width - 1; x++) {
         // Cycle through middle columns
-        const middleColIndex = (x - 1) % group.middle.length;
-        const middleCol = group.middle[middleColIndex];
+        let middleCol: number[] = [];
+        if (group.middle.length > 0) {
+            const middleColIndex = (x - 1) % group.middle.length;
+            middleCol = group.middle[middleColIndex];
+        } else {
+            // Fallback to single or left if no middle defined (e.g. 1-wide source)
+            middleCol = group.single;
+        }
         addColumn(x, middleCol);
     }
 

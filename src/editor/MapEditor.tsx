@@ -671,8 +671,9 @@ export function MapEditor() {
         const sel = paletteSelection;
 
         // Validation: Must select at least 3 tiles horizontally
-        if (sel.w < 3) {
-            alert("Please select at least 3 tiles horizontally (Left, Middle..., Right) to create a group.");
+        // Validation: Must select at least 1 tile
+        if (sel.w < 1) {
+            alert("Please select at least 1 tile.");
             return;
         }
 
@@ -745,7 +746,7 @@ export function MapEditor() {
         setEditingGroup(group);
     }
 
-    function handleSaveGroup(updates: { name: string; role: "terrain" | "decoration"; canResize: boolean; canFlip: boolean; allowInGeneration: boolean }) {
+    function handleSaveGroup(updates: { name: string; role: "terrain" | "decoration" | "terrain-decoration"; canResize: boolean; canFlip: boolean; allowInGeneration: boolean }) {
         if (editingGroup) {
             updateTileGroup(editingGroup.id, updates);
             setEditingGroup(null);

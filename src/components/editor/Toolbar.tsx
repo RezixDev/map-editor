@@ -11,6 +11,7 @@ type ToolbarProps = {
     onSave: () => void;
     onLoad: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onExport: () => void;
+    onLevelFileExport: () => void;
     onUploadImage: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onGenerate: () => void;
 };
@@ -23,6 +24,7 @@ export function Toolbar({
     onSave,
     onLoad,
     onExport,
+    onLevelFileExport,
     onUploadImage,
     onGenerate
 }: ToolbarProps) {
@@ -105,6 +107,12 @@ export function Toolbar({
                     onClick={onExport}
                 >
                     Export PNG
+                </button>
+                <button
+                    className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700"
+                    onClick={onLevelFileExport}
+                >
+                    Export .level file
                 </button>
             </div>
 

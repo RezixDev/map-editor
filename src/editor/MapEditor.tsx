@@ -665,6 +665,48 @@ export function MapEditor() {
         a.click();
     }
 
+    function handleExportAsLevelFile() {
+        if (!image) {
+            return;
+        }
+
+        const tempOutput: Record<string, string[]> = {};
+        for (const layer of layers) {
+            Object.entries(layer.data).forEach(([k, v]) => {
+                const split = k.split(",");
+                const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+                const srcX = (v.tileId % tilesPerRow);
+                const srcY = Math.floor(v.tileId / tilesPerRow);
+                const worldX = parseInt(split[0]) * TILE_WIDTH;
+                const worldY = (Math.abs(parseInt(split[1]) + 1 - mapSize.height)) * TILE_WIDTH;
+                const posKey = `${worldX},${worldY}`;
+                if (!tempOutput[posKey]) {
+                    tempOutput[posKey] = [`${srcX},${srcY}`];
+                    return;
+                }
+                tempOutput[posKey].push(`${srcX},${srcY}`);
+            })
+        }
+        let output = "";
+        Object.entries(tempOutput).forEach(([k, v]) => {
+            const split = k.split(",");
+            output += `${v.length}\n${split[0]}\n${split[1]}\n`;
+            for (const tile of v) {
+                output += `${tile}\n`;
+            }
+            output += "#";
+        })
+        output = output.substring(0, output.length - 1);
+
+        const blob = new Blob([output], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "map_data.level";
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
     function handleCreateTileGroup() {
         if (!image) return;
         const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
@@ -814,6 +856,7 @@ export function MapEditor() {
                 onSave={handleSaveMap}
                 onLoad={handleLoadMap}
                 onExport={handleExportPng}
+                onLevelFileExport={handleExportAsLevelFile}
                 onUploadImage={handleUploadImage}
                 onGenerate={handleGenerateLevel}
             />

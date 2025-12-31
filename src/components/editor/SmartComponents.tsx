@@ -1,18 +1,19 @@
-import React, { useRef, useEffect } from "react";
+import { useRef, useEffect } from "react";
 import type { TileGroup } from "../../types";
-import { TILE_WIDTH, TILE_HEIGHT } from "../../constants";
 
 type SmartComponentsProps = {
     image: HTMLImageElement | null;
     tileGroups: Record<string, TileGroup>;
+    gridSize: number;
     activeGroup: TileGroup | null;
     onSelectGroup: (group: TileGroup) => void;
     onCreateGroup: () => void;
     onDeleteGroup: (id: string) => void;
     onEditGroup: (group: TileGroup) => void;
+    onClearAll: () => void;
 };
 
-export function SmartComponents({ image, tileGroups, activeGroup, onSelectGroup, onCreateGroup, onDeleteGroup, onEditGroup }: SmartComponentsProps) {
+export function SmartComponents({ image, tileGroups, gridSize, activeGroup, onSelectGroup, onCreateGroup, onDeleteGroup, onEditGroup, onClearAll }: SmartComponentsProps) {
     // Helper to draw a preview for a group
     function GroupPreview({ group }: { group: TileGroup }) {
         const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -22,21 +23,21 @@ export function SmartComponents({ image, tileGroups, activeGroup, onSelectGroup,
             const ctx = canvas?.getContext("2d");
             if (!canvas || !ctx || !image) return;
 
-            const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+            const tilesPerRow = Math.floor(image.width / gridSize);
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             group.preview.forEach((tileId, index) => {
-                const srcX = (tileId % tilesPerRow) * TILE_WIDTH;
-                const srcY = Math.floor(tileId / tilesPerRow) * TILE_HEIGHT;
+                const srcX = (tileId % tilesPerRow) * gridSize;
+                const srcY = Math.floor(tileId / tilesPerRow) * gridSize;
 
                 ctx.drawImage(
                     image,
-                    srcX, srcY, TILE_WIDTH, TILE_HEIGHT,
-                    index * TILE_WIDTH, 0, TILE_WIDTH, TILE_HEIGHT
+                    srcX, srcY, gridSize, gridSize,
+                    index * gridSize, 0, gridSize, gridSize
                 );
             });
-        }, [group, image]);
+        }, [group, image, gridSize]); // Added gridSize to deps
 
         return (
             <div
@@ -78,8 +79,8 @@ export function SmartComponents({ image, tileGroups, activeGroup, onSelectGroup,
                 <div className="flex gap-1">
                     <canvas
                         ref={canvasRef}
-                        width={group.preview.length * TILE_WIDTH}
-                        height={TILE_HEIGHT}
+                        width={group.preview.length * gridSize}
+                        height={gridSize}
                         className="block"
                     />
                     {group.height > 1 && (
@@ -90,19 +91,43 @@ export function SmartComponents({ image, tileGroups, activeGroup, onSelectGroup,
         );
     }
 
-    if (!image) return null;
+    if (!image) {
+        return (
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden border-t border-gray-200 dark:border-gray-700 pt-2">
+                <div className="flex justify-between items-center mb-2 px-1">
+                    <h3 className="font-bold">Components</h3>
+                </div>
+                <div className="text-sm text-gray-500 p-2 italic">
+                    Load an image to see components.
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <div className="flex-none flex flex-col h-full overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <div className="flex justify-between items-center mb-2 px-1">
                 <h3 className="font-bold">Components</h3>
-                <button
-                    onClick={onCreateGroup}
-                    className="px-2 py-0.5 bg-green-600 text-white text-xs rounded hover:bg-green-700"
-                    title="Create from Palette Selection (Select 3 tiles)"
-                >
-                    + Add
-                </button>
+                <div className="flex gap-1">
+                    <button
+                        onClick={() => {
+                            if (confirm("Delete ALL components? This cannot be undone.")) {
+                                onClearAll();
+                            }
+                        }}
+                        className="px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs rounded hover:bg-red-200 dark:hover:bg-red-900/50"
+                        title="Clear All Components"
+                    >
+                        Clear All
+                    </button>
+                    <button
+                        onClick={onCreateGroup}
+                        className="px-2 py-0.5 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                        title="Create from Palette Selection (Select 3 tiles)"
+                    >
+                        + Add
+                    </button>
+                </div>
             </div>
             <div className="flex-1 overflow-y-auto">
                 {Object.values(tileGroups).map(group => (

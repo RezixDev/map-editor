@@ -31,14 +31,6 @@ export function generateProceduralLevel(
         data: {}
     };
 
-    // Walker parameters
-    let currentX = 2;
-    let currentY = Math.floor(height / 2);
-    const minDistant = 2;
-    const maxDistant = 4;
-    const minHeight = 4;
-    const maxHeight = height - 4;
-
     // Separating Roles
     const terrainGroups = Object.values(allGroups).filter(g => g.role === "terrain");
     const decoGroups = Object.values(allGroups).filter(g => g.role === "decoration");
@@ -94,8 +86,11 @@ export function generateProceduralLevel(
 
                 // Bounds Check for individual tiles (safety)
                 if (gy >= 0 && gy < height) {
-                    mainLayer.data[`${gx},${gy}`] = { ...tile, flipX: false };
-                    collisionLayer.data[`${gx},${gy}`] = { tileId: 0, flipX: false };
+                    // Overlap Check: Don't overwrite existing terrain from previous passes
+                    if (!mainLayer.data[`${gx},${gy}`]) {
+                        mainLayer.data[`${gx},${gy}`] = { ...tile, flipX: false };
+                        collisionLayer.data[`${gx},${gy}`] = { tileId: 0, flipX: false };
+                    }
                 }
             });
 

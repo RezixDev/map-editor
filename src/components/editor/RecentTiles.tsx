@@ -1,15 +1,15 @@
 import { useRef, useEffect } from "react";
 import { type SelectionRect } from "../../types";
-import { TILE_WIDTH, TILE_HEIGHT } from "../../constants";
 
 type RecentTilesProps = {
     recentStamps: SelectionRect[];
     onSelect: (stamp: SelectionRect) => void;
     image: HTMLImageElement | null;
     activeStamp: SelectionRect;
+    gridSize: number;
 };
 
-export function RecentTiles({ recentStamps, onSelect, image, activeStamp }: RecentTilesProps) {
+export function RecentTiles({ recentStamps, onSelect, image, activeStamp, gridSize }: RecentTilesProps) {
     return (
         <div className="flex gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 overflow-x-auto h-12 items-center transition-colors">
             <span className="text-xs font-bold text-gray-500 mr-2 flex-none">History:</span>
@@ -18,6 +18,7 @@ export function RecentTiles({ recentStamps, onSelect, image, activeStamp }: Rece
                     key={i}
                     stamp={stamp}
                     image={image}
+                    gridSize={gridSize}
                     onClick={() => onSelect(stamp)}
                     isActive={
                         activeStamp.x === stamp.x &&
@@ -37,11 +38,13 @@ export function RecentTiles({ recentStamps, onSelect, image, activeStamp }: Rece
 function TilePreview({
     stamp,
     image,
+    gridSize,
     onClick,
     isActive,
 }: {
     stamp: SelectionRect;
     image: HTMLImageElement | null;
+    gridSize: number;
     onClick: () => void;
     isActive: boolean;
 }) {
@@ -53,8 +56,8 @@ function TilePreview({
         if (!canvas || !ctx || !image) return;
 
         // Scale down if large
-        const stampW = stamp.w * TILE_WIDTH;
-        const stampH = stamp.h * TILE_HEIGHT;
+        const stampW = stamp.w * gridSize;
+        const stampH = stamp.h * gridSize;
 
         // Fit to 32x32 max
         const scale = Math.min(32 / stampW, 32 / stampH);
@@ -71,8 +74,8 @@ function TilePreview({
 
         ctx.drawImage(
             image,
-            stamp.x * TILE_WIDTH,
-            stamp.y * TILE_HEIGHT,
+            stamp.x * gridSize,
+            stamp.y * gridSize,
             stampW,
             stampH,
             offsetX,
@@ -81,7 +84,7 @@ function TilePreview({
             drawH
         );
 
-    }, [stamp, image]);
+    }, [stamp, image, gridSize]);
 
     return (
         <div

@@ -1,18 +1,19 @@
 import React, { useRef, useEffect, type MouseEvent } from "react";
 import { type SelectionRect } from "../../types";
-import { TILE_WIDTH, TILE_HEIGHT } from "../../constants";
 
 type PaletteProps = {
     image: HTMLImageElement | null;
     selection: SelectionRect;
     setSelection: React.Dispatch<React.SetStateAction<SelectionRect>>;
     zoom: number;
+    gridSize: number;
     setZoom: React.Dispatch<React.SetStateAction<number>>;
     isFlipped: boolean;
     onToolChange: () => void;
+    onSelectionEnd?: (selection: SelectionRect) => void;
 };
 
-export function Palette({ image, selection, setSelection, zoom, setZoom, isFlipped, onToolChange }: PaletteProps) {
+export function Palette({ image, selection, setSelection, zoom, setZoom, gridSize, isFlipped, onToolChange, onSelectionEnd }: PaletteProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const isMouseDown = useRef(false);
     const selectionStart = useRef<{ x: number; y: number } | null>(null);
@@ -40,12 +41,12 @@ export function Palette({ image, selection, setSelection, zoom, setZoom, isFlipp
         // Draw Grid Overlay on Palette
         context.beginPath();
         // Vertical lines
-        for (let i = 0; i <= image.width; i += TILE_WIDTH) {
+        for (let i = 0; i <= image.width; i += gridSize) {
             context.moveTo(i, 0);
             context.lineTo(i, image.height);
         }
         // Horizontal lines
-        for (let i = 0; i <= image.height; i += TILE_HEIGHT) {
+        for (let i = 0; i <= image.height; i += gridSize) {
             context.moveTo(0, i);
             context.lineTo(image.width, i);
         }
@@ -54,10 +55,10 @@ export function Palette({ image, selection, setSelection, zoom, setZoom, isFlipp
         context.stroke();
 
         // Draw Selection Box on Palette
-        const drawX = selection.x * TILE_WIDTH;
-        const drawY = selection.y * TILE_HEIGHT;
-        const drawW = selection.w * TILE_WIDTH;
-        const drawH = selection.h * TILE_HEIGHT;
+        const drawX = selection.x * gridSize;
+        const drawY = selection.y * gridSize;
+        const drawW = selection.w * gridSize;
+        const drawH = selection.h * gridSize;
 
         context.beginPath();
         context.strokeStyle = "white";
@@ -75,7 +76,26 @@ export function Palette({ image, selection, setSelection, zoom, setZoom, isFlipp
 
     useEffect(() => {
         renderPalette();
-    }, [image, selection, zoom]);
+    }, [image, selection, zoom, gridSize]);
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const onWheel = (e: WheelEvent) => {
+            if (e.metaKey || e.ctrlKey) {
+                e.preventDefault();
+                setZoom((z) => {
+                    const newZoom = z - e.deltaY * 0.001;
+                    // Clamp between 0.25x and 4x
+                    return Math.max(0.25, Math.min(4, newZoom));
+                });
+            }
+        };
+
+        canvas.addEventListener("wheel", onWheel, { passive: false });
+        return () => canvas.removeEventListener("wheel", onWheel);
+    }, [setZoom]);
 
     function handleMouseDown(e: MouseEvent<HTMLCanvasElement>) {
         const canvas = canvasRef.current;
@@ -85,8 +105,8 @@ export function Palette({ image, selection, setSelection, zoom, setZoom, isFlipp
         const x = e.nativeEvent.offsetX / zoom;
         const y = e.nativeEvent.offsetY / zoom;
 
-        const tileX = Math.floor(x / TILE_WIDTH);
-        const tileY = Math.floor(y / TILE_HEIGHT);
+        const tileX = Math.floor(x / gridSize);
+        const tileY = Math.floor(y / gridSize);
 
         selectionStart.current = { x: tileX, y: tileY };
         setSelection({ x: tileX, y: tileY, w: 1, h: 1 });
@@ -104,8 +124,8 @@ export function Palette({ image, selection, setSelection, zoom, setZoom, isFlipp
         const y = e.nativeEvent.offsetY / zoom;
 
         // Constrain to image bounds
-        const tileX = Math.max(0, Math.min(Math.floor(x / TILE_WIDTH), Math.floor(image.width / TILE_WIDTH) - 1));
-        const tileY = Math.max(0, Math.min(Math.floor(y / TILE_HEIGHT), Math.floor(image.height / TILE_HEIGHT) - 1));
+        const tileX = Math.max(0, Math.min(Math.floor(x / gridSize), Math.floor(image.width / gridSize) - 1));
+        const tileY = Math.max(0, Math.min(Math.floor(y / gridSize), Math.floor(image.height / gridSize) - 1));
 
         const start = selectionStart.current;
         const minX = Math.min(start.x, tileX);
@@ -117,19 +137,13 @@ export function Palette({ image, selection, setSelection, zoom, setZoom, isFlipp
     }
 
     function handleMouseUp() {
+        if (isMouseDown.current && onSelectionEnd) {
+            onSelectionEnd(selection);
+        }
         isMouseDown.current = false;
     }
 
-    function handleWheel(e: React.WheelEvent) {
-        if (e.metaKey || e.ctrlKey) {
-            e.preventDefault();
-            setZoom((z) => {
-                const newZoom = z - e.deltaY * 0.001;
-                // Clamp between 0.25x and 4x
-                return Math.max(0.25, Math.min(4, newZoom));
-            });
-        }
-    }
+
 
     return (
         <div className="flex-1 flex flex-col min-h-0" style={{ width: "100%" }}>
@@ -147,7 +161,6 @@ export function Palette({ image, selection, setSelection, zoom, setZoom, isFlipp
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
-                    onWheel={handleWheel}
                     aria-label="Palette Grid - Use arrow keys to navigate"
                     tabIndex={0}
                 />

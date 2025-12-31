@@ -6,6 +6,8 @@ import { Sun, Moon } from "lucide-react";
 type ToolbarProps = {
     mapSize: { width: number; height: number };
     setMapSize: React.Dispatch<React.SetStateAction<{ width: number; height: number }>>;
+    gridSize: number;
+    onGridSizeChange: (size: number) => void;
     currentTool: Tool;
     setCurrentTool: React.Dispatch<React.SetStateAction<Tool>>;
     onSave: () => void;
@@ -14,11 +16,14 @@ type ToolbarProps = {
     onLevelFileExport: () => void;
     onUploadImage: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onGenerate: () => void;
+    onClearMap: () => void;
 };
 
 export function Toolbar({
     mapSize,
     setMapSize,
+    gridSize,
+    onGridSizeChange,
     currentTool,
     setCurrentTool,
     onSave,
@@ -26,7 +31,8 @@ export function Toolbar({
     onExport,
     onLevelFileExport,
     onUploadImage,
-    onGenerate
+    onGenerate,
+    onClearMap
 }: ToolbarProps) {
     const { theme, setTheme } = useTheme();
 
@@ -52,6 +58,22 @@ export function Toolbar({
                     />
                 </label>
             </div>
+
+            {/* Grid Size Selector */}
+            <div className="flex gap-2 items-center bg-gray-100 dark:bg-gray-800 p-2 rounded transition-colors">
+                <span className="text-sm font-medium">Grid:</span>
+                <select
+                    value={gridSize}
+                    onChange={(e) => onGridSizeChange(Number(e.target.value))}
+                    className="p-1 rounded border dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+                >
+                    <option value={16}>16px</option>
+                    <option value={32}>32px</option>
+                    <option value={64}>64px</option>
+                    <option value={128}>128px</option>
+                </select>
+            </div>
+
             <input type="file" accept="image/png" className="block" onChange={onUploadImage} />
 
             <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded transition-colors">
@@ -107,6 +129,17 @@ export function Toolbar({
                     onClick={onExport}
                 >
                     Export PNG
+                </button>
+                <button
+                    className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 ml-2"
+                    onClick={() => {
+                        if (confirm("Clear the entire map? This cannot be undone.")) {
+                            onClearMap();
+                        }
+                    }}
+                    title="Clear Map"
+                >
+                    Clear Map
                 </button>
                 <button
                     className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700"

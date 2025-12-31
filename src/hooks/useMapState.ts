@@ -19,6 +19,7 @@ const INITIAL_MAP_SIZE = { width: 64, height: 16 };
 export function useMapState() {
     const [layers, setLayers] = useImmer<Layer[]>(INITIAL_LAYERS);
     const [mapSize, setMapSize] = useState(INITIAL_MAP_SIZE);
+    const [gridSize, setGridSize] = useState(32);
     const [recentStamps, setRecentStamps] = useImmer<SelectionRect[]>([]);
     const [tileGroups, setTileGroups] = useImmer<Record<string, TileGroup>>(INITIAL_TILE_GROUPS);
 
@@ -38,6 +39,7 @@ export function useMapState() {
                 if (data && Array.isArray(data.layers) && data.mapSize) {
                     setLayers(data.layers);
                     setMapSize(data.mapSize);
+                    if (data.gridSize) setGridSize(data.gridSize); // Hydrate gridSize
                     if (data.recentStamps) {
                         setRecentStamps(data.recentStamps);
                     }
@@ -69,6 +71,7 @@ export function useMapState() {
                 const state = {
                     layers,
                     mapSize,
+                    gridSize, // Persist gridSize
                     recentStamps,
                     tileGroups
                 };
@@ -88,7 +91,9 @@ export function useMapState() {
         return () => {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         };
-    }, [layers, mapSize, recentStamps, tileGroups]);
+    }, [layers, mapSize, gridSize, recentStamps, tileGroups]);
+
+    // ... (rest of the file remains, but we need to update the return statement too)
 
     const addRecentStamp = useCallback((stamp: SelectionRect) => {
         setRecentStamps(draft => {
@@ -113,15 +118,20 @@ export function useMapState() {
         historyPast.current.push(layers);
         if (historyPast.current.length > 50) historyPast.current.shift();
         historyFuture.current = [];
+        console.log("Checkpoint saved. History size:", historyPast.current.length);
     }, [layers]);
 
     // Undo
     const performUndo = useCallback(() => {
-        if (historyPast.current.length === 0) return;
+        if (historyPast.current.length === 0) {
+            console.log("Undo stack empty");
+            return;
+        }
         const previous = historyPast.current.pop();
         if (previous) {
             historyFuture.current.push(layers);
             setLayers(previous);
+            console.log("Undo performed. Stack size:", historyPast.current.length);
         }
     }, [layers, setLayers]);
 
@@ -132,6 +142,7 @@ export function useMapState() {
         if (next) {
             historyPast.current.push(layers);
             setLayers(next);
+            console.log("Redo performed");
         }
     }, [layers, setLayers]);
 
@@ -209,11 +220,26 @@ export function useMapState() {
 
 
 
+    const clearTileGroups = useCallback(() => {
+        setTileGroups({});
+    }, [setTileGroups]);
+
+    const clearMap = useCallback(() => {
+        saveCheckpoint();
+        setLayers(draft => {
+            draft.forEach(layer => {
+                layer.data = {};
+            });
+        });
+    }, [setLayers, saveCheckpoint]);
+
     return {
         layers,
         setLayers,
         mapSize,
         setMapSize,
+        gridSize,
+        setGridSize,
 
         recentStamps,
         addRecentStamp,
@@ -228,6 +254,10 @@ export function useMapState() {
         tileGroups,
         addTileGroup,
         removeTileGroup,
-        updateTileGroup
+        updateTileGroup,
+        clearTileGroups,
+        clearMap,
+        setRecentStamps,
+        setTileGroups
     };
 }

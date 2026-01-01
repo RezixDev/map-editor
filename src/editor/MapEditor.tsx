@@ -612,7 +612,13 @@ export function MapEditor() {
     }
 
     function handleSaveMap() {
-        const jsonString = JSON.stringify(layers, null, 2);
+        const mapData = {
+            layers,
+            mapSize,
+            gridSize,
+            tileGroups
+        };
+        const jsonString = JSON.stringify(mapData, null, 2);
         const blob = new Blob([jsonString], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");

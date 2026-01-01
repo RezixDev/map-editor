@@ -14,12 +14,12 @@ const INITIAL_LAYERS: Layer[] = [
     { id: "collision", name: "Collision", visible: true, opacity: 0.5, data: {} },
 ];
 
-const INITIAL_MAP_SIZE = { width: 64, height: 16 };
+const INITIAL_MAP_SIZE = { width: 120, height: 10 };
 
 export function useMapState() {
     const [layers, setLayers] = useImmer<Layer[]>(INITIAL_LAYERS);
     const [mapSize, setMapSize] = useState(INITIAL_MAP_SIZE);
-    const [gridSize, setGridSize] = useState(32);
+    const [gridSize, setGridSize] = useState(64);
     const [recentStamps, setRecentStamps] = useImmer<SelectionRect[]>([]);
     const [tileGroups, setTileGroups] = useImmer<Record<string, TileGroup>>(INITIAL_TILE_GROUPS);
 

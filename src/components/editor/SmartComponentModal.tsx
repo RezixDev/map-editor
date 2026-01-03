@@ -46,7 +46,6 @@ export function SmartComponentModal({ isOpen, onClose, onSave, initialData }: Pr
             canResize,
             canFlip,
             allowInGeneration,
-            allowInGeneration,
             verticalAlignments: (role === "decoration" || role === "terrain" || role === "terrain-decoration") ? verticalAlignments : undefined,
             density: (role === "decoration" || role === "terrain-decoration" || role === "terrain") ? density : undefined
         });

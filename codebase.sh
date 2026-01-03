@@ -1,10 +1,12 @@
 #!/bin/bash
 
 # --- Configuration ---
-TARGET_DIR="src" # Now specifically targeting the src folder
+TARGET_DIR="." 
 OUTPUT_FILE="codebase_src_only.txt"
 EXTENSIONS=("js" "ts" "jsx" "tsx" "py" "java" "cpp" "h" "css" "html" "md" "json" "yml" "yaml")
 EXCLUDE_DIRS=(".git" "node_modules" "dist" "build" "__pycache__" ".next" "coverage")
+# Added specific lock files to ignore
+EXCLUDE_FILES=("package-lock.json" "pnpm-lock.yaml" "yarn.lock" "composer.lock")
 
 # Check if src exists
 if [ ! -d "$TARGET_DIR" ]; then
@@ -22,10 +24,9 @@ echo "## Project Structure (/$TARGET_DIR)" >> "$OUTPUT_FILE"
 echo '```' >> "$OUTPUT_FILE"
 
 if command -v tree >/dev/null 2>&1; then
-    # -I ignores the excluded dirs, targeting only TARGET_DIR
-    tree "$TARGET_DIR" -I "$(echo "${EXCLUDE_DIRS[@]}" | sed 's/ /|/g')" >> "$OUTPUT_FILE"
+    # Added -I for lock files in tree view as well
+    tree "$TARGET_DIR" -I "$(echo "${EXCLUDE_DIRS[@]} ${EXCLUDE_FILES[@]}" | sed 's/ /|/g')" >> "$OUTPUT_FILE"
 else
-    # Manual fallback for tree view
     find "$TARGET_DIR" -maxdepth 4 -not -path '*/.*' | sed -e "s/[^-][^\/]*\// |/g" -e "s/|\([^ ]\)/|-- \1/" >> "$OUTPUT_FILE"
 fi
 
@@ -44,10 +45,15 @@ for i in "${!EXTENSIONS[@]}"; do
     fi
 done
 
-# Build exclude string
+# Build directory exclude string
 EXCLUDE_STR=""
 for dir in "${EXCLUDE_DIRS[@]}"; do
     EXCLUDE_STR+="-not -path '*/$dir/*' "
+done
+
+# NEW: Build file exclude string
+for file_to_ignore in "${EXCLUDE_FILES[@]}"; do
+    EXCLUDE_STR+="-not -name '$file_to_ignore' "
 done
 
 echo "Collecting files from $TARGET_DIR..."

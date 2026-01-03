@@ -1,10 +1,11 @@
 import { useRef, useEffect, type MouseEvent } from "react";
-import { type Layer, type SelectionRect, type Tool, type CustomBrush } from "../../types";
-import { TILE_WIDTH, TILE_HEIGHT } from "../../constants";
+import { type Layer, type SelectionRect, type Tool, type CustomBrush, type TileGroup } from "../../types";
+import { generatePlatformData } from "../../constants/tileGroups";
 
 type MapCanvasProps = {
     layers: Layer[];
     mapSize: { width: number; height: number };
+    gridSize: number;
     zoom: number;
     setZoom: React.Dispatch<React.SetStateAction<number>>;
     selection: SelectionRect | null;
@@ -13,6 +14,7 @@ type MapCanvasProps = {
     paletteSelection: SelectionRect;
     isFlipped: boolean;
     customBrush: CustomBrush | null;
+    activeTileGroup: TileGroup | null;
     cameraOffset: { x: number; y: number };
     onMouseDown: (e: MouseEvent<HTMLCanvasElement>) => void;
     onMouseMove: (e: MouseEvent<HTMLCanvasElement>) => void;
@@ -23,6 +25,7 @@ type MapCanvasProps = {
 export function MapCanvas({
     layers,
     mapSize,
+    gridSize,
     zoom,
     setZoom,
     selection,
@@ -32,6 +35,7 @@ export function MapCanvas({
     paletteSelection,
     isFlipped,
     customBrush,
+    activeTileGroup,
     cameraOffset,
     onMouseDown,
     onMouseMove,
@@ -48,8 +52,8 @@ export function MapCanvas({
         if (!canvas || !context || !image) return;
 
         // Resize map canvas
-        const logicalWidth = mapSize.width * TILE_WIDTH;
-        const logicalHeight = mapSize.height * TILE_HEIGHT;
+        const logicalWidth = mapSize.width * gridSize;
+        const logicalHeight = mapSize.height * gridSize;
 
         if (canvas.width !== logicalWidth || canvas.height !== logicalHeight) {
             canvas.width = logicalWidth;
@@ -71,20 +75,20 @@ export function MapCanvas({
 
             Object.entries(layer.data).forEach(([key, tileData]) => {
                 const [gx, gy] = key.split(",").map(Number);
-                const drawX = gx * TILE_WIDTH;
-                const drawY = gy * TILE_HEIGHT;
+                const drawX = gx * gridSize;
+                const drawY = gy * gridSize;
 
-                const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
-                const srcX = (tileData.tileId % tilesPerRow) * TILE_WIDTH;
-                const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
+                const tilesPerRow = Math.floor(image.width / gridSize);
+                const srcX = (tileData.tileId % tilesPerRow) * gridSize;
+                const srcY = Math.floor(tileData.tileId / tilesPerRow) * gridSize;
 
                 context.save();
                 if (tileData.flipX) {
-                    context.translate(drawX + TILE_WIDTH, drawY);
+                    context.translate(drawX + gridSize, drawY);
                     context.scale(-1, 1);
-                    context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
+                    context.drawImage(image, srcX, srcY, gridSize, gridSize, 0, 0, gridSize, gridSize);
                 } else {
-                    context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, drawX, drawY, TILE_WIDTH, TILE_HEIGHT);
+                    context.drawImage(image, srcX, srcY, gridSize, gridSize, drawX, drawY, gridSize, gridSize);
                 }
                 context.restore();
             });
@@ -98,12 +102,12 @@ export function MapCanvas({
         context.translate(cameraOffset.x, cameraOffset.y);
         context.beginPath();
         for (let i = 0; i <= mapSize.width; i++) {
-            context.moveTo(i * TILE_WIDTH, 0);
-            context.lineTo(i * TILE_WIDTH, logicalHeight);
+            context.moveTo(i * gridSize, 0);
+            context.lineTo(i * gridSize, logicalHeight);
         }
         for (let i = 0; i <= mapSize.height; i++) {
-            context.moveTo(0, i * TILE_HEIGHT);
-            context.lineTo(logicalWidth, i * TILE_HEIGHT);
+            context.moveTo(0, i * gridSize);
+            context.lineTo(logicalWidth, i * gridSize);
         }
         context.strokeStyle = "rgba(0,0,0, 0.4)";
         context.lineWidth = 1;
@@ -114,10 +118,10 @@ export function MapCanvas({
         if (selection) {
             context.save();
             context.translate(cameraOffset.x, cameraOffset.y);
-            const selX = selection.x * TILE_WIDTH;
-            const selY = selection.y * TILE_HEIGHT;
-            const selW = selection.w * TILE_WIDTH;
-            const selH = selection.h * TILE_HEIGHT;
+            const selX = selection.x * gridSize;
+            const selY = selection.y * gridSize;
+            const selW = selection.w * gridSize;
+            const selH = selection.h * gridSize;
 
             // Fill
             context.fillStyle = "rgba(0, 140, 255, 0.2)";
@@ -146,8 +150,8 @@ export function MapCanvas({
             context.save();
             context.translate(cameraOffset.x, cameraOffset.y);
 
-            const gridX = Math.floor((mousePosRef.current.x - cameraOffset.x) / TILE_WIDTH) * TILE_WIDTH;
-            const gridY = Math.floor((mousePosRef.current.y - cameraOffset.y) / TILE_HEIGHT) * TILE_HEIGHT;
+            const gridX = Math.floor((mousePosRef.current.x - cameraOffset.x) / gridSize) * gridSize;
+            const gridY = Math.floor((mousePosRef.current.y - cameraOffset.y) / gridSize) * gridSize;
 
             // Draw Ghost Tile
             if (currentTool === "brush" || currentTool === "fill") {
@@ -161,49 +165,75 @@ export function MapCanvas({
                         // Mirror ghost layout
                         const finalDx = isFlipped ? (customBrush.width - 1 - dx) : dx;
 
-                        const drawX = gridX + (finalDx * TILE_WIDTH);
-                        const drawY = gridY + (dy * TILE_HEIGHT);
+                        const drawX = gridX + (finalDx * gridSize);
+                        const drawY = gridY + (dy * gridSize);
 
-                        const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
-                        const srcX = (tileData.tileId % tilesPerRow) * TILE_WIDTH;
-                        const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
+                        const tilesPerRow = Math.floor(image.width / gridSize);
+                        const srcX = (tileData.tileId % tilesPerRow) * gridSize;
+                        const srcY = Math.floor(tileData.tileId / tilesPerRow) * gridSize;
 
                         context.save();
                         // Combined Flip Logic: Source Flip XOR Global Flip
                         const combinedFlip = tileData.flipX !== isFlipped;
 
                         if (combinedFlip) {
-                            context.translate(drawX + TILE_WIDTH, drawY);
+                            context.translate(drawX + gridSize, drawY);
                             context.scale(-1, 1);
-                            context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
+                            context.drawImage(image, srcX, srcY, gridSize, gridSize, 0, 0, gridSize, gridSize);
                         } else {
-                            context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, drawX, drawY, TILE_WIDTH, TILE_HEIGHT);
+                            context.drawImage(image, srcX, srcY, gridSize, gridSize, drawX, drawY, gridSize, gridSize);
                         }
                         context.restore();
                     });
                 } else if (currentTool === "fill") {
                     // Simple 1x1 ghost for Fill tool
-                    const srcX = paletteSelection.x * TILE_WIDTH;
-                    const srcY = paletteSelection.y * TILE_HEIGHT;
+                    const srcX = paletteSelection.x * gridSize;
+                    const srcY = paletteSelection.y * gridSize;
 
                     context.save();
                     if (isFlipped) {
-                        context.translate(gridX + TILE_WIDTH, gridY);
+                        context.translate(gridX + gridSize, gridY);
                         context.scale(-1, 1);
-                        context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
+                        context.drawImage(image, srcX, srcY, gridSize, gridSize, 0, 0, gridSize, gridSize);
                     } else {
-                        context.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, gridX, gridY, TILE_WIDTH, TILE_HEIGHT);
+                        context.drawImage(image, srcX, srcY, gridSize, gridSize, gridX, gridY, gridSize, gridSize);
                     }
                     context.restore();
                 }
 
                 context.globalAlpha = 1.0;
+            } else if (currentTool === "smartBrush" && activeTileGroup) {
+                context.globalAlpha = 0.5;
+
+                // Determine width for preview
+                let width = 1;
+                const startX = selection ? selection.x * gridSize : gridX;
+                const startY = selection ? selection.y * gridSize : gridY;
+
+                if (selection) {
+                    width = selection.w;
+                }
+
+                const platformData = generatePlatformData(width, activeTileGroup);
+                const tilesPerRow = Math.floor(image.width / gridSize);
+
+                Object.entries(platformData).forEach(([key, tileData]) => {
+                    const [dx, dy] = key.split(",").map(Number);
+                    const drawX = startX + (dx * gridSize);
+                    const drawY = startY + (dy * gridSize);
+
+                    const srcX = (tileData.tileId % tilesPerRow) * gridSize;
+                    const srcY = Math.floor(tileData.tileId / tilesPerRow) * gridSize;
+
+                    context.drawImage(image, srcX, srcY, gridSize, gridSize, drawX, drawY, gridSize, gridSize);
+                });
+                context.globalAlpha = 1.0;
             }
 
             // Draw Cursor Border
             if (currentTool === "brush") {
-                const drawW = paletteSelection.w * TILE_WIDTH;
-                const drawH = paletteSelection.h * TILE_HEIGHT;
+                const drawW = paletteSelection.w * gridSize;
+                const drawH = paletteSelection.h * gridSize;
 
                 context.beginPath();
                 context.strokeStyle = "white";
@@ -218,15 +248,21 @@ export function MapCanvas({
                 context.lineDashOffset = 0;
             } else if (currentTool === "eraser" || currentTool === "fill") {
                 // Single tile hover (Eraser, Fill)
+                // Add fill for eraser to make it more visible
+                if (currentTool === "eraser") {
+                    context.fillStyle = "rgba(255, 0, 0, 0.2)";
+                    context.fillRect(gridX, gridY, gridSize, gridSize);
+                }
+
                 context.beginPath();
                 context.strokeStyle = "white";
                 context.lineWidth = 1;
                 context.setLineDash([4, 4]);
-                context.strokeRect(gridX, gridY, TILE_WIDTH, TILE_HEIGHT);
+                context.strokeRect(gridX, gridY, gridSize, gridSize);
 
                 context.strokeStyle = "black";
                 context.lineDashOffset = 4;
-                context.strokeRect(gridX, gridY, TILE_WIDTH, TILE_HEIGHT);
+                context.strokeRect(gridX, gridY, gridSize, gridSize);
                 context.setLineDash([]);
                 context.lineDashOffset = 0;
             }
@@ -260,24 +296,32 @@ export function MapCanvas({
         onMouseLeave();
     }
 
-    function handleWheel(e: React.WheelEvent) {
-        if (e.metaKey || e.ctrlKey) {
-            e.preventDefault();
-            setZoom((z) => {
-                const newZoom = z - e.deltaY * 0.001;
-                return Math.max(0.25, Math.min(4, newZoom));
-            });
-        }
-    }
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const onWheel = (e: WheelEvent) => {
+            if (e.metaKey || e.ctrlKey) {
+                e.preventDefault();
+                setZoom((z) => {
+                    const newZoom = z - e.deltaY * 0.001;
+                    return Math.max(0.25, Math.min(4, newZoom));
+                });
+            }
+        };
+
+        canvas.addEventListener("wheel", onWheel, { passive: false });
+        return () => canvas.removeEventListener("wheel", onWheel);
+    }, [setZoom]);
 
     return (
-        <div className="border-2 border-gray-300 bg-gray-100 flex-1 overflow-auto relative rounded">
+        <div className="border-2 border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 flex-1 overflow-auto relative rounded transition-colors">
             <canvas
                 ref={canvasRef}
-                className="block bg-white shadow-sm origin-top-left"
+                className="block bg-white dark:bg-gray-900 shadow-sm origin-top-left transition-colors"
                 style={{
-                    width: mapSize.width * TILE_WIDTH * zoom,
-                    height: mapSize.height * TILE_HEIGHT * zoom,
+                    width: mapSize.width * gridSize * zoom,
+                    height: mapSize.height * gridSize * zoom,
                     imageRendering: "pixelated",
                     cursor: ((): string => {
                         switch (currentTool) {
@@ -298,7 +342,6 @@ export function MapCanvas({
                 onMouseMove={handleInternalMouseMove}
                 onMouseUp={onMouseUp}
                 onMouseLeave={handleInternalMouseLeave}
-                onWheel={handleWheel}
                 aria-label="Map Grid"
                 tabIndex={0}
             ></canvas>

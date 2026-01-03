@@ -2,12 +2,17 @@ import { useRef, useState, useEffect, type MouseEvent } from "react";
 import spritesheet from "../assets/project.png";
 import { useMapState } from "../hooks/useMapState";
 import { type TileData, type Tool, type SelectionRect, type CustomBrush } from "../types";
-import { TILE_WIDTH, TILE_HEIGHT } from "../constants";
 import { LayerPanel } from "../components/editor/LayerPanel";
 import { Toolbar } from "../components/editor/Toolbar";
 import { Palette } from "../components/editor/Palette";
 import { RecentTiles } from "../components/editor/RecentTiles";
 import { MapCanvas } from "../components/editor/MapCanvas";
+import { SmartComponents } from "../components/editor/SmartComponents";
+import { SmartComponentModal } from "../components/editor/SmartComponentModal";
+import { GenerationConfigModal } from "../components/editor/GenerationConfigModal";
+import { type TileGroup } from "../types";
+import { generatePlatformData } from "../constants/tileGroups";
+import { generateProceduralLevel } from "../utils/levelGen";
 
 export function MapEditor() {
     const {
@@ -23,11 +28,28 @@ export function MapEditor() {
         addRecentStamp,
         addLayer,
         removeLayer,
-        renameLayer
+        renameLayer,
+        tileGroups,
+        addTileGroup,
+        removeTileGroup,
+        updateTileGroup,
+        clearTileGroups,
+        clearMap,
+        gridSize,
+        setGridSize,
+        setRecentStamps,
+        setTileGroups
     } = useMapState();
 
     const [image, setImage] = useState<HTMLImageElement | null>(null);
+    const [editingGroup, setEditingGroup] = useState<TileGroup | null>(null);
+    const [showGenModal, setShowGenModal] = useState(false);
+
+    // Add effect to prevent scrolling when modal is open if needed, implies logic here.
     const [paletteWidth, setPaletteWidth] = useState(280);
+
+    // ... (skipping unchanged lines in state block if possible, but for safety I will include the state block and Toolbar replacement)
+
     const [zoomMap, setZoomMap] = useState(1);
     const [zoomPalette, setZoomPalette] = useState(1);
     const [cameraOffset, setCameraOffset] = useState({ x: 0, y: 0 });
@@ -36,6 +58,7 @@ export function MapEditor() {
     const [activeLayerIndex, setActiveLayerIndex] = useState(0);
     const [currentTool, setCurrentTool] = useState<Tool>("brush");
     const [selection, setSelection] = useState<SelectionRect | null>(null);
+    const [activeTileGroup, setActiveTileGroup] = useState<TileGroup | null>(null);
 
     const [clipboard, setClipboard] = useState<Record<string, TileData> | null>(null);
     const [customBrush, setCustomBrush] = useState<CustomBrush | null>(null);
@@ -48,14 +71,13 @@ export function MapEditor() {
     const lastPaintedTiles = useRef<Set<string>>(new Set());
     const selectionStart = useRef<{ x: number; y: number } | null>(null);
 
-
-
+    // ... (functions omitted, jumping to return)
 
     function updatePaletteSelection(newSelection: SelectionRect) {
         setPaletteSelection(newSelection);
 
         if (!image) return;
-        const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+        const tilesPerRow = Math.floor(image.width / gridSize);
         const brushData: Record<string, TileData> = {};
 
         for (let dy = 0; dy < newSelection.h; dy++) {
@@ -140,7 +162,7 @@ export function MapEditor() {
             const firstTile = Object.values(trimmedData)[0];
             if (firstTile) {
                 // Check if *all* tiles align contiguously on spritesheet relative to the first
-                const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+                const tilesPerRow = Math.floor(image.width / gridSize);
                 const firstId = firstTile.tileId;
                 const startSrcX = firstId % tilesPerRow;
                 const startSrcY = Math.floor(firstId / tilesPerRow);
@@ -212,8 +234,8 @@ export function MapEditor() {
                 setPaletteSelection(prev => {
                     if (!image) return prev;
                     let { x, y } = prev;
-                    const maxW = Math.floor(image.width / TILE_WIDTH) - 1;
-                    const maxH = Math.floor(image.height / TILE_HEIGHT) - 1;
+                    const maxW = Math.floor(image.width / gridSize) - 1;
+                    const maxH = Math.floor(image.height / gridSize) - 1;
                     if (e.key === "ArrowLeft") x = Math.max(0, x - 1);
                     if (e.key === "ArrowRight") x = Math.min(maxW, x + 1);
                     if (e.key === "ArrowUp") y = Math.max(0, y - 1);
@@ -224,7 +246,7 @@ export function MapEditor() {
 
                     // Sync custom brush explicitly here since we need access to the calculated newSel
                     // and we can't easily use the helper inside the functional update.
-                    const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+                    const tilesPerRow = Math.floor(image.width / gridSize);
                     const brushData: Record<string, TileData> = {};
                     for (let dy = 0; dy < newSel.h; dy++) {
                         for (let dx = 0; dx < newSel.w; dx++) {
@@ -323,6 +345,22 @@ export function MapEditor() {
                 isPanning.current = false;
                 document.body.style.cursor = "default";
             }
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    console.log("Key Redo");
+                    performRedo();
+                } else {
+                    console.log("Key Undo");
+                    performUndo();
+                }
+            }
+
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y") {
+                e.preventDefault();
+                console.log("Key Redo (Y)");
+                performRedo();
+            }
         }
 
         window.addEventListener("keydown", handleKeyDown);
@@ -358,8 +396,8 @@ export function MapEditor() {
     }, []);
 
     function paintTile(gridX: number, gridY: number, tileId: number | null, flipX?: boolean) {
-        const gx = Math.floor(gridX / TILE_WIDTH);
-        const gy = Math.floor(gridY / TILE_HEIGHT);
+        const gx = Math.floor(gridX / gridSize);
+        const gy = Math.floor(gridY / gridSize);
         const key = `${gx},${gy}`;
 
         setLayers((draft) => {
@@ -414,22 +452,22 @@ export function MapEditor() {
         const x = (e.nativeEvent.offsetX / zoomMap) - cameraOffset.x;
         const y = (e.nativeEvent.offsetY / zoomMap) - cameraOffset.y;
 
-        const pixelWidth = mapSize.width * TILE_WIDTH;
-        const pixelHeight = mapSize.height * TILE_HEIGHT;
+        const pixelWidth = mapSize.width * gridSize;
+        const pixelHeight = mapSize.height * gridSize;
 
         if (x < 0 || y < 0 || x >= pixelWidth || y >= pixelHeight) return;
 
-        const gridX = Math.floor(x / TILE_WIDTH) * TILE_WIDTH;
-        const gridY = Math.floor(y / TILE_HEIGHT) * TILE_HEIGHT;
-        const gx = Math.floor(x / TILE_WIDTH);
-        const gy = Math.floor(y / TILE_HEIGHT);
+        const gridX = Math.floor(x / gridSize) * gridSize;
+        const gridY = Math.floor(y / gridSize) * gridSize;
+        const gx = Math.floor(x / gridSize);
+        const gy = Math.floor(y / gridSize);
         const tileKey = `${gx},${gy}`;
 
         if (lastPaintedTiles.current.has(tileKey)) return;
 
 
         if (!image) return;
-        const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
+        const tilesPerRow = Math.floor(image.width / gridSize);
 
         if (currentTool === "brush") {
             if (customBrush) {
@@ -440,8 +478,8 @@ export function MapEditor() {
                     // Mirror the brush layout if flipped
                     const finalDx = isFlipped ? (customBrush.width - 1 - dx) : dx;
 
-                    const targetX = gridX + (finalDx * TILE_WIDTH);
-                    const targetY = gridY + (dy * TILE_HEIGHT);
+                    const targetX = gridX + (finalDx * gridSize);
+                    const targetY = gridY + (dy * gridSize);
 
                     if (targetX >= pixelWidth || targetY >= pixelHeight) return;
 
@@ -474,6 +512,17 @@ export function MapEditor() {
                 const h = Math.abs(start.y - gy) + 1;
                 setSelection({ x: minX, y: minY, w, h });
             }
+        } else if (currentTool === "smartBrush") {
+            if (e.type === "mousedown") {
+                selectionStart.current = { x: gx, y: gy };
+                setSelection({ x: gx, y: gy, w: 1, h: 1 });
+            } else if (isMouseDown.current && selectionStart.current) {
+                const start = selectionStart.current;
+                // Horizontal only for now
+                const w = Math.abs(start.x - gx) + 1;
+                const minX = Math.min(start.x, gx);
+                setSelection({ x: minX, y: start.y, w: w, h: 1 });
+            }
         }
     }
 
@@ -490,8 +539,8 @@ export function MapEditor() {
             if (!image) return;
             const x = (e.nativeEvent.offsetX / zoomMap) - cameraOffset.x;
             const y = (e.nativeEvent.offsetY / zoomMap) - cameraOffset.y;
-            const gx = Math.floor(x / TILE_WIDTH);
-            const gy = Math.floor(y / TILE_HEIGHT);
+            const gx = Math.floor(x / gridSize);
+            const gy = Math.floor(y / gridSize);
 
             sampleArea({ x: gx, y: gy, w: 1, h: 1 });
             return;
@@ -531,6 +580,23 @@ export function MapEditor() {
 
         if (currentTool === "eyedropper" && selection) {
             sampleArea(selection);
+        } else if (currentTool === "smartBrush" && selection && activeTileGroup) {
+            saveCheckpoint();
+            const width = selection.w;
+            const platformData = generatePlatformData(width, activeTileGroup);
+            const startX = selection.x;
+            const startY = selection.y;
+
+            setLayers((draft) => {
+                const activeData = draft[activeLayerIndex].data;
+                Object.entries(platformData).forEach(([key, tileData]) => {
+                    const [dx, dy] = key.split(",").map(Number);
+                    const finalX = startX + dx;
+                    const finalY = startY + dy;
+                    activeData[`${finalX},${finalY}`] = { ...tileData, flipX: false };
+                });
+            });
+            setSelection(null);
         }
     }
 
@@ -546,7 +612,13 @@ export function MapEditor() {
     }
 
     function handleSaveMap() {
-        const jsonString = JSON.stringify(layers, null, 2);
+        const mapData = {
+            layers,
+            mapSize,
+            gridSize,
+            tileGroups
+        };
+        const jsonString = JSON.stringify(mapData, null, 2);
         const blob = new Blob([jsonString], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -563,30 +635,47 @@ export function MapEditor() {
         const reader = new FileReader();
         reader.onload = (ev) => {
             try {
-                const json = JSON.parse(ev.target?.result as string);
-                if (Array.isArray(json)) {
-                    setLayers(json);
-                } else if (typeof json === "object" && json !== null) {
-                    // Legacy
-                    setLayers(draft => {
-                        draft[0].data = json;
-                    });
-                } else {
-                    alert("Invalid JSON format");
+                const data = JSON.parse(ev.target?.result as string);
+                if (data && Array.isArray(data.layers) && data.mapSize) {
+                    setLayers(data.layers);
+                    setMapSize(data.mapSize);
+                    if (data.gridSize) setGridSize(data.gridSize);
+                    if (data.recentStamps) setRecentStamps(data.recentStamps);
+                    if (data.tileGroups) setTileGroups(data.tileGroups);
+                } else if (Array.isArray(data)) {
+                    // Legacy layers only
+                    setLayers(data);
                 }
-            } catch (error) {
-                alert("Failed to parse JSON");
+            } catch (err) {
+                console.error("Failed to parse map file", err);
+                alert("Invalid JSON map file.");
             }
         };
         reader.readAsText(file);
+    }
+
+    function handleGridSizeChange(newSize: number) {
+        // Check if map is not empty
+        const hasTiles = layers.some(l => Object.keys(l.data).length > 0);
+        const hasGroups = Object.keys(tileGroups).length > 0;
+
+        if (hasTiles || hasGroups) {
+            if (confirm("Changing grid size requires clearing the current map to prevent errors. Continue?")) {
+                clearMap();
+                clearTileGroups();
+                setGridSize(newSize);
+            }
+        } else {
+            setGridSize(newSize);
+        }
     }
 
     function handleExportPng() {
         if (!image) return;
 
         const tempCanvas = document.createElement("canvas");
-        tempCanvas.width = mapSize.width * TILE_WIDTH;
-        tempCanvas.height = mapSize.height * TILE_HEIGHT;
+        tempCanvas.width = mapSize.width * gridSize;
+        tempCanvas.height = mapSize.height * gridSize;
         const ctx = tempCanvas.getContext("2d");
         if (!ctx) return;
 
@@ -596,20 +685,20 @@ export function MapEditor() {
 
             Object.entries(layer.data).forEach(([key, tileData]) => {
                 const [gx, gy] = key.split(",").map(Number);
-                const drawX = gx * TILE_WIDTH;
-                const drawY = gy * TILE_HEIGHT;
+                const drawX = gx * gridSize;
+                const drawY = gy * gridSize;
 
-                const tilesPerRow = Math.floor(image.width / TILE_WIDTH);
-                const srcX = (tileData.tileId % tilesPerRow) * TILE_WIDTH;
-                const srcY = Math.floor(tileData.tileId / tilesPerRow) * TILE_HEIGHT;
+                const tilesPerRow = Math.floor(image.width / gridSize);
+                const srcX = (tileData.tileId % tilesPerRow) * gridSize;
+                const srcY = Math.floor(tileData.tileId / tilesPerRow) * gridSize;
 
                 ctx.save();
                 if (tileData.flipX) {
-                    ctx.translate(drawX + TILE_WIDTH, drawY);
+                    ctx.translate(drawX + gridSize, drawY);
                     ctx.scale(-1, 1);
-                    ctx.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, 0, 0, TILE_WIDTH, TILE_HEIGHT);
+                    ctx.drawImage(image, srcX, srcY, gridSize, gridSize, 0, 0, gridSize, gridSize);
                 } else {
-                    ctx.drawImage(image, srcX, srcY, TILE_WIDTH, TILE_HEIGHT, drawX, drawY, TILE_WIDTH, TILE_HEIGHT);
+                    ctx.drawImage(image, srcX, srcY, gridSize, gridSize, drawX, drawY, gridSize, gridSize);
                 }
                 ctx.restore();
             });
@@ -622,30 +711,176 @@ export function MapEditor() {
         a.click();
     }
 
+    function handleExportAsLevelFile() {
+        if (!image) {
+            return;
+        }
+
+        const tempOutput: Record<string, string[]> = {};
+        for (const layer of layers) {
+            Object.entries(layer.data).forEach(([k, v]) => {
+                const split = k.split(",");
+                const tilesPerRow = Math.floor(image.width / gridSize);
+                const srcX = (v.tileId % tilesPerRow);
+                const srcY = Math.floor(v.tileId / tilesPerRow);
+                const worldX = parseInt(split[0]) * gridSize;
+                const worldY = (Math.abs(parseInt(split[1]) + 1 - mapSize.height)) * gridSize;
+                const posKey = `${worldX},${worldY}`;
+                if (!tempOutput[posKey]) {
+                    tempOutput[posKey] = [`${srcX},${srcY}`];
+                    return;
+                }
+                tempOutput[posKey].push(`${srcX},${srcY}`);
+            })
+        }
+        let output = "";
+        Object.entries(tempOutput).forEach(([k, v]) => {
+            const split = k.split(",");
+            output += `${v.length}\n${split[0]}\n${split[1]}\n`;
+            for (const tile of v) {
+                output += `${tile}\n`;
+            }
+            output += "#";
+        })
+        output = output.substring(0, output.length - 1);
+
+        const blob = new Blob([output], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "map_data.level";
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function handleCreateTileGroup() {
+        if (!image) return;
+        const tilesPerRow = Math.floor(image.width / gridSize);
+        const sel = paletteSelection;
+
+        // Validation: Must select at least 3 tiles horizontally
+        // Validation: Must select at least 1 tile
+        if (sel.w < 1) {
+            alert("Please select at least 1 tile.");
+            return;
+        }
+
+
+        // Extract columns
+        const getColumn = (colIndex: number) => {
+            const col: number[] = [];
+            for (let y = 0; y < sel.h; y++) {
+                const tileId = (sel.y + y) * tilesPerRow + (sel.x + colIndex);
+                col.push(tileId);
+            }
+            return col;
+        };
+
+        const left = getColumn(0);
+        const right = getColumn(sel.w - 1);
+
+        const middle: number[][] = [];
+        for (let x = 1; x < sel.w - 1; x++) {
+            middle.push(getColumn(x));
+        }
+
+        const single = middle.length > 0 ? middle[0] : left;
+
+        // Preview: flattened top row for simple preview
+        const preview: number[] = [];
+        for (let x = 0; x < sel.w; x++) {
+            preview.push(getColumn(x)[0]); // Top tile only for icon
+        }
+
+        const newGroup: TileGroup = {
+            id: crypto.randomUUID(),
+            name: "New Smart Component", // Default name, will be edited in modal
+            role: "terrain", // Default role, will be edited in modal
+            canResize: true, // Default, will be edited in modal
+            canFlip: false,  // Explicitly set
+            allowInGeneration: true, // Default, will be edited in modal
+            left,
+            middle,
+            right,
+            single,
+            height: sel.h,
+            preview,
+        };
+
+        setEditingGroup(newGroup);
+    }
+
+    function handleEditTileGroup(group: TileGroup) {
+        setEditingGroup(group);
+    }
+
+    function handleSaveGroup(updates: { name: string; role: "terrain" | "decoration" | "terrain-decoration"; canResize: boolean; canFlip: boolean; allowInGeneration: boolean; verticalAlignments?: ("top" | "bottom")[]; density?: number }) {
+        if (editingGroup) {
+            if (tileGroups[editingGroup.id]) {
+                // Update existing
+                updateTileGroup(editingGroup.id, updates);
+            } else {
+                // Create new
+                addTileGroup({
+                    ...editingGroup,
+                    ...updates
+                });
+            }
+            setEditingGroup(null);
+        }
+    }
+
+
+
+    // Fix generateProceduralLevel call to use first available group if "grass" missing
+    function handleGenerateLevel() {
+        setShowGenModal(true);
+    }
+
+    function handleFinalGenerate(selectedIds: string[]) {
+        saveCheckpoint();
+
+        // Filter groups based on selection
+        const filteredGroups: Record<string, TileGroup> = {};
+        selectedIds.forEach(id => {
+            if (tileGroups[id]) {
+                filteredGroups[id] = tileGroups[id];
+            }
+        });
+
+        const tilesPerRow = Math.floor(image?.width ? image.width / gridSize : 8);
+        const newLayers = generateProceduralLevel(mapSize.width, mapSize.height, filteredGroups, tilesPerRow);
+        setLayers(newLayers);
+        setActiveLayerIndex(0);
+        setShowGenModal(false);
+    }
+
     return (
-        <div className="h-screen flex flex-col p-4 box-border">
+        <div className="h-screen flex flex-col p-4 box-border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
             <h1 className="text-2xl font-bold mb-4">Map Editor</h1>
 
             <Toolbar
                 mapSize={mapSize}
                 setMapSize={setMapSize}
+                gridSize={gridSize}
+                onGridSizeChange={handleGridSizeChange}
                 currentTool={currentTool}
                 setCurrentTool={setCurrentTool}
                 onSave={handleSaveMap}
                 onLoad={handleLoadMap}
                 onExport={handleExportPng}
+                onLevelFileExport={handleExportAsLevelFile}
                 onUploadImage={handleUploadImage}
+                onGenerate={handleGenerateLevel}
+                onClearMap={clearMap}
             />
 
             <RecentTiles
                 recentStamps={recentStamps}
-                onSelect={(stamp) => {
-                    updatePaletteSelection(stamp);
-                    setCurrentTool("brush");
-                    addRecentStamp(stamp);
-                }}
+                onSelect={setPaletteSelection}
                 image={image}
                 activeStamp={paletteSelection}
+                gridSize={gridSize}
             />
 
             <div className="flex gap-4 items-start flex-1 overflow-hidden">
@@ -671,92 +906,145 @@ export function MapEditor() {
                         setZoom={setZoomPalette}
                         isFlipped={isFlipped}
                         onToolChange={() => {
-                            setCurrentTool("brush");
-                            // Note: Palette internal clicks will need to call setSelection
-                            // We need to make sure Palette calls the passed setSelection prop.
-                            // If Palette allows choosing new rect, it works.
+                            if (currentTool !== "brush" && currentTool !== "fill") {
+                                setCurrentTool("brush");
+                            }
                         }}
+                        onSelectionEnd={addRecentStamp}
+                        gridSize={gridSize}
+                    />
+
+                    <div className="h-4 bg-gray-50 dark:bg-gray-800 cursor-row-resize flex items-center justify-center border-y border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        onMouseDown={() => {
+                            // Separator
+                        }}
+                    >
+                        <div className="w-12 h-1 bg-gray-300 dark:bg-gray-600 rounded-full" />
+                    </div>
+
+                    <SmartComponents
+                        image={image}
+                        tileGroups={tileGroups}
+                        activeGroup={activeTileGroup}
+                        onSelectGroup={(group) => {
+                            setActiveTileGroup(group);
+                            setCurrentTool("smartBrush");
+                        }}
+                        onCreateGroup={handleCreateTileGroup}
+                        onDeleteGroup={removeTileGroup}
+                        onEditGroup={handleEditTileGroup}
+                        gridSize={gridSize}
+                        onClearAll={clearTileGroups}
                     />
                 </div>
 
                 <div
-                    className="w-1 cursor-col-resize h-full hover:bg-blue-400 bg-gray-200 flex-none transition-colors"
+                    className="w-1 cursor-col-resize bg-gray-200 dark:bg-gray-800 hover:bg-blue-400 transition-colors"
                     onMouseDown={() => {
                         isResizing.current = true;
                         document.body.style.cursor = "col-resize";
                     }}
                 />
 
-                <div className="flex-1 h-full min-w-0 flex flex-col">
-                    <h3 className="font-bold mb-2">Map</h3>
+                <div className="flex-1 overflow-hidden relative bg-gray-100 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
                     <MapCanvas
                         layers={layers}
                         mapSize={mapSize}
-
                         zoom={zoomMap}
                         setZoom={setZoomMap}
                         cameraOffset={cameraOffset}
-                        selection={selection}
-                        image={image}
                         currentTool={currentTool}
-                        paletteSelection={paletteSelection}
-                        isFlipped={isFlipped}
-                        customBrush={customBrush}
+                        selection={selection}
+                        activeTileGroup={activeTileGroup}
+                        image={image}
                         onMouseDown={handleMapMouseDown}
                         onMouseMove={handleMapMouseMove}
                         onMouseUp={handleMapMouseUp}
                         onMouseLeave={handleMapMouseUp}
+                        gridSize={gridSize}
+                        isFlipped={isFlipped}
+                        paletteSelection={paletteSelection}
+                        customBrush={customBrush}
                     />
 
-                    <LayerPanel
-                        layers={layers}
-                        activeLayerIndex={activeLayerIndex}
-                        setActiveLayerIndex={setActiveLayerIndex}
-                        onToggleVisibility={(index) => {
-                            setLayers(draft => {
-                                draft[index].visible = !draft[index].visible;
-                            });
-                        }}
-                        onOpacityChange={(index, opacity) => {
-                            setLayers(draft => {
-                                draft[index].opacity = opacity;
-                            });
-                        }}
-                        onMoveLayer={(index, direction) => {
-                            setLayers(draft => {
-                                const targetIndex = direction === 'up' ? index + 1 : index - 1;
-                                if (targetIndex < 0 || targetIndex >= draft.length) return;
-
-                                const temp = draft[index];
-                                draft[index] = draft[targetIndex];
-                                draft[targetIndex] = temp;
-
-                                // Update active index if we moved the active layer or swapped with it
-                                if (activeLayerIndex === index) {
-                                    setActiveLayerIndex(targetIndex);
-                                } else if (activeLayerIndex === targetIndex) {
-                                    setActiveLayerIndex(index);
+                    <div className="absolute top-2 right-2 bg-white/90 dark:bg-gray-800/90 p-2 rounded shadow border border-gray-200 dark:border-gray-700 backdrop-blur-sm">
+                        <LayerPanel
+                            layers={layers}
+                            activeLayerIndex={activeLayerIndex}
+                            setActiveLayerIndex={setActiveLayerIndex}
+                            onAddLayer={() => {
+                                const name = prompt("Enter layer name:", "New Layer");
+                                if (name !== null) {
+                                    addLayer(name || "Layer");
+                                    setActiveLayerIndex(layers.length); // optimistic
                                 }
-                            });
-                        }}
-                        onAddLayer={() => {
-                            const name = prompt("Enter layer name:", "New Layer");
-                            if (name !== null) {
-                                addLayer(name || "Layer");
-                                setActiveLayerIndex(layers.length);
-                            }
-                        }}
-                        onRemoveLayer={(index) => {
-                            removeLayer(index);
-                            // If we deleted the active layer, or a layer below it, adjust
-                            if (activeLayerIndex >= index) {
-                                setActiveLayerIndex(Math.max(0, activeLayerIndex - 1));
-                            }
-                        }}
-                        onRenameLayer={renameLayer}
-                    />
+                            }}
+                            onRemoveLayer={(index) => {
+                                removeLayer(index);
+                                if (activeLayerIndex >= index) {
+                                    setActiveLayerIndex(Math.max(0, activeLayerIndex - 1));
+                                }
+                            }}
+                            onMoveLayer={(index, direction) => {
+                                setLayers(draft => {
+                                    const targetIndex = direction === 'up' ? index + 1 : index - 1; // Up means higher index/z-index
+                                    if (targetIndex >= 0 && targetIndex < draft.length) {
+                                        const temp = draft[targetIndex];
+                                        draft[targetIndex] = draft[index];
+                                        draft[index] = temp;
+
+                                        // Update active index selection if we moved the active layer or swallowed it
+                                        if (activeLayerIndex === index) {
+                                            // We can't update state inside setLayers (immer draft).
+                                            // We need a separate effect or just accept it might desync?
+                                            // Actually setActiveLayerIndex is a separate state.
+                                            // We should set it AFTER.
+                                            // But we are in a callback.
+                                        }
+                                    }
+                                });
+                                // Fix active index in a separate tick or just assume user will click?
+                                // Better: calculate new index and set it.
+                                const targetIndex = direction === 'up' ? index + 1 : index - 1;
+                                if (targetIndex >= 0 && targetIndex < layers.length) {
+                                    if (activeLayerIndex === index) setActiveLayerIndex(targetIndex);
+                                    else if (activeLayerIndex === targetIndex) setActiveLayerIndex(index);
+                                }
+                            }}
+                            onToggleVisibility={(idx) => {
+                                setLayers(draft => {
+                                    draft[idx].visible = !draft[idx].visible;
+                                });
+                            }}
+                            onOpacityChange={(idx, val) => {
+                                setLayers(draft => {
+                                    draft[idx].opacity = val;
+                                });
+                            }}
+                            onRenameLayer={renameLayer}
+                        />
+                    </div>
                 </div>
             </div>
+
+            {editingGroup && (
+                <SmartComponentModal
+                    isOpen={true}
+                    initialData={editingGroup}
+                    onClose={() => setEditingGroup(null)}
+                    onSave={handleSaveGroup}
+                />
+            )}
+
+            {showGenModal && (
+                <GenerationConfigModal
+                    isOpen={true}
+                    onClose={() => setShowGenModal(false)}
+                    onGenerate={handleFinalGenerate}
+                    tileGroups={tileGroups}
+                />
+            )}
         </div>
     );
 }
+

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useImmer } from "use-immer";
-import { type Layer, type SelectionRect } from "../types";
+import { type Layer, type SelectionRect, type TileGroup } from "../types";
+import { INITIAL_TILE_GROUPS } from "../constants/tileGroups";
 
 const STORAGE_KEY = "tile_craft_editor_v1";
 
@@ -13,12 +14,14 @@ const INITIAL_LAYERS: Layer[] = [
     { id: "collision", name: "Collision", visible: true, opacity: 0.5, data: {} },
 ];
 
-const INITIAL_MAP_SIZE = { width: 64, height: 16 };
+const INITIAL_MAP_SIZE = { width: 120, height: 10 };
 
 export function useMapState() {
     const [layers, setLayers] = useImmer<Layer[]>(INITIAL_LAYERS);
     const [mapSize, setMapSize] = useState(INITIAL_MAP_SIZE);
+    const [gridSize, setGridSize] = useState(64);
     const [recentStamps, setRecentStamps] = useImmer<SelectionRect[]>([]);
+    const [tileGroups, setTileGroups] = useImmer<Record<string, TileGroup>>(INITIAL_TILE_GROUPS);
 
     // History Stacks
     const historyPast = useRef<Layer[][]>([]);
@@ -36,8 +39,12 @@ export function useMapState() {
                 if (data && Array.isArray(data.layers) && data.mapSize) {
                     setLayers(data.layers);
                     setMapSize(data.mapSize);
+                    if (data.gridSize) setGridSize(data.gridSize); // Hydrate gridSize
                     if (data.recentStamps) {
                         setRecentStamps(data.recentStamps);
+                    }
+                    if (data.tileGroups) {
+                        setTileGroups(data.tileGroups);
                     }
                 } else if (Array.isArray(data)) {
                     // Legacy fallback if just layers were saved
@@ -64,7 +71,9 @@ export function useMapState() {
                 const state = {
                     layers,
                     mapSize,
-                    recentStamps
+                    gridSize, // Persist gridSize
+                    recentStamps,
+                    tileGroups
                 };
                 const json = JSON.stringify(state);
 
@@ -82,7 +91,9 @@ export function useMapState() {
         return () => {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         };
-    }, [layers, mapSize, recentStamps]);
+    }, [layers, mapSize, gridSize, recentStamps, tileGroups]);
+
+    // ... (rest of the file remains, but we need to update the return statement too)
 
     const addRecentStamp = useCallback((stamp: SelectionRect) => {
         setRecentStamps(draft => {
@@ -107,15 +118,20 @@ export function useMapState() {
         historyPast.current.push(layers);
         if (historyPast.current.length > 50) historyPast.current.shift();
         historyFuture.current = [];
+        console.log("Checkpoint saved. History size:", historyPast.current.length);
     }, [layers]);
 
     // Undo
     const performUndo = useCallback(() => {
-        if (historyPast.current.length === 0) return;
+        if (historyPast.current.length === 0) {
+            console.log("Undo stack empty");
+            return;
+        }
         const previous = historyPast.current.pop();
         if (previous) {
             historyFuture.current.push(layers);
             setLayers(previous);
+            console.log("Undo performed. Stack size:", historyPast.current.length);
         }
     }, [layers, setLayers]);
 
@@ -126,6 +142,7 @@ export function useMapState() {
         if (next) {
             historyPast.current.push(layers);
             setLayers(next);
+            console.log("Redo performed");
         }
     }, [layers, setLayers]);
 
@@ -180,12 +197,49 @@ export function useMapState() {
         });
     }, [setLayers]);
 
+    const addTileGroup = useCallback((group: TileGroup) => {
+        setTileGroups(draft => {
+            draft[group.id] = group;
+        });
+    }, [setTileGroups]);
+
+    const removeTileGroup = useCallback((id: string) => {
+        setTileGroups(draft => {
+            delete draft[id];
+        });
+    }, [setTileGroups]);
+
+    const updateTileGroup = useCallback((id: string, updates: Partial<TileGroup>) => {
+        setTileGroups(draft => {
+            const group = draft[id];
+            if (group) {
+                Object.assign(group, updates);
+            }
+        });
+    }, [setTileGroups]);
+
+
+
+    const clearTileGroups = useCallback(() => {
+        setTileGroups({});
+    }, [setTileGroups]);
+
+    const clearMap = useCallback(() => {
+        saveCheckpoint();
+        setLayers(draft => {
+            draft.forEach(layer => {
+                layer.data = {};
+            });
+        });
+    }, [setLayers, saveCheckpoint]);
 
     return {
         layers,
         setLayers,
         mapSize,
         setMapSize,
+        gridSize,
+        setGridSize,
 
         recentStamps,
         addRecentStamp,
@@ -195,6 +249,15 @@ export function useMapState() {
 
         addLayer,
         removeLayer,
-        renameLayer
+        renameLayer,
+
+        tileGroups,
+        addTileGroup,
+        removeTileGroup,
+        updateTileGroup,
+        clearTileGroups,
+        clearMap,
+        setRecentStamps,
+        setTileGroups
     };
 }

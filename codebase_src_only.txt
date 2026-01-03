@@ -1,36 +1,341 @@
-# Codebase Export: /src folder
-Generated on: Wed Dec 24 11:36:14 CET 2025
+# Codebase Export: /. folder
+Generated on: Wed Dec 24 12:46:13 CET 2025
 ------------------------------------------------
-## Project Structure (/src)
+## Project Structure (/.)
 ```
-src
- |-- App.tsx
- |-- main.tsx
- |-- App.css
- |-- index.css
- |-- types.ts
- |-- components
+.
+ |-- pnpm-lock.yaml
+ |-- tsconfig.node.json
+ |-- index.html
+ |-- tsconfig.app.json
+ |-- codebase_src_only.txt
+ |-- dist
+ | |-- index.html
+ | |-- assets
+ | | |-- index-BGtRhHTc.js
+ | | |-- project-dUe5zc86.png
+ | | |-- index-r9y5EpkX.css
+ |-- node_modules
+ | |-- @types
+ | | |-- react-dom
+ | | |-- node
+ | | |-- react
+ | |-- globals
+ | |-- eslint-scope
+ | |-- @eslint
+ | | |-- config-array
+ | | |-- config-helpers
+ | | |-- core
+ | | |-- js
+ | | |-- object-schema
+ | | |-- plugin-kit
+ | | |-- eslintrc
+ | |-- typescript-eslint
+ | |-- @tailwindcss
+ | | |-- vite
+ | |-- typescript
+ | |-- lucide-react
+ | |-- @typescript-eslint
+ | | |-- project-service
+ | | |-- tsconfig-utils
+ | | |-- types
+ | | |-- typescript-estree
+ | | |-- utils
+ | | |-- parser
+ | | |-- type-utils
+ | | |-- scope-manager
+ | | |-- eslint-plugin
+ | | |-- visitor-keys
+ | |-- eslint-visitor-keys
+ | |-- eslint-plugin-react-hooks
+ | |-- gh-pages
+ | |-- use-immer
+ | |-- @vitejs
+ | | |-- plugin-react-swc
+ | |-- react-dom
+ | |-- vite
+ | |-- immer
+ | |-- eslint-plugin-react-refresh
+ | |-- eslint
+ | |-- tailwindcss
+ | |-- react
+ | |-- @eslint-community
+ | | |-- eslint-utils
+ | | |-- regexpp
+ |-- README.md
+ |-- public
+ |-- package.json
+ |-- tsconfig.json
+ |-- eslint.config.js
+ |-- vite.config.ts
+ |-- src
+ | |-- App.tsx
+ | |-- main.tsx
+ | |-- App.css
+ | |-- index.css
+ | |-- types.ts
+ | |-- components
+ | | |-- editor
+ | | | |-- Palette.tsx
+ | | | |-- Toolbar.tsx
+ | | | |-- LayerPanel.tsx
+ | | | |-- MapCanvas.tsx
+ | | | |-- RecentTiles.tsx
+ | |-- constants.ts
+ | |-- hooks
+ | | |-- useMapState.ts
+ | |-- assets
+ | | |-- PathAndObjects.png
+ | | |-- project.png
+ | | |-- project_old.png
+ | | |-- TileSet.png
  | |-- editor
- | | |-- Palette.tsx
- | | |-- Toolbar.tsx
- | | |-- LayerPanel.tsx
- | | |-- MapCanvas.tsx
- | | |-- RecentTiles.tsx
- |-- constants.ts
- |-- hooks
- | |-- useMapState.ts
- |-- assets
- | |-- PathAndObjects.png
- | |-- project.png
- | |-- project_old.png
- | |-- TileSet.png
- |-- editor
- | |-- MapEditor.tsx
+ | | |-- MapEditor.tsx
+ |-- codebase.sh
 ```
 
 ## Project Files
 ---
-### File: src/App.tsx
+### File: ./tsconfig.node.json
+```json
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["vite.config.ts"]
+}
+
+```
+
+---
+### File: ./index.html
+```html
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tile Map Editor</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>
+```
+
+---
+### File: ./tsconfig.app.json
+```json
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "types": ["vite/client"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["src"]
+}
+
+```
+
+---
+### File: ./README.md
+```md
+# Map Editor
+
+A React-based 2D Tile Map Editor for creating and editing game maps.
+
+## Features
+
+### Tools
+- **Brush**: Paint tiles onto the grid.
+- **Eraser**: Remove tiles from the grid.
+- **Bucket Fill**: Flood fill contiguous areas with a selected tile.
+- **Marquee Selection**: Select rectangular areas of the map.
+    - **Copy (Cmd+C)**: Copy selection to clipboard.
+    - **Paste (Cmd+V)**: Paste clipboard content.
+    - **Delete**: Clear selected area.
+
+### Palette & layout
+- **Dynamic Palette**: Automatically resizes to fit your uploaded spritesheet.
+- **Grid Overlay**: Visual helper on the palette to see tile boundaries (32x32).
+- **Split View**: Fixed palette on the left, scrollable map on the right.
+
+### Start & Export
+- **Save JSON**: Download your map data (`map_data.json`) to save your progress.
+- **Load JSON**: Upload a saved JSON file to restore your map.
+- **Export PNG**: Download a clean PNG image of your map (`map_image.png`).
+
+## Setup
+
+1. Install dependencies:
+   ```bash
+   pnpm install
+   ```
+
+2. Run the development server:
+   ```bash
+   pnpm run dev
+   ```
+
+3. Open your browser to the local server address (usually `http://localhost:5173`).
+
+## Usage
+
+1. **Select a Tile**: Click any tile in the Palette on the left.
+2. **Draw**: Click and drag on the Map to paint.
+3. **Change Tools**: Use the toolbar buttons to switch between Brush, Eraser, Bucket, and Marquee.
+4. **Change Spritesheet**: Use the file input in the toolbar to upload a custom spritesheet (`.png`).
+
+```
+
+---
+### File: ./package.json
+```json
+{
+  "name": "map-editor",
+  "homepage": "https://rezixdev.github.io/map-editor/",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "predeploy": "pnpm run build",
+    "deploy": "gh-pages -d dist"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "gh-pages": "^6.3.0",
+    "immer": "^11.1.0",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwindcss": "^4.1.18",
+    "use-immer": "^0.11.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react-swc": "^4.2.2",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vite": "^7.2.4"
+  },
+  "packageManager": "pnpm@9.15.2+sha512.93e57b0126f0df74ce6bff29680394c0ba54ec47246b9cf321f0121d8d9bb03f750a705f24edc3c1180853afd7c2c3b94196d0a3d53d3e069d9e2793ef11f321"
+}
+```
+
+---
+### File: ./tsconfig.json
+```json
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}
+
+```
+
+---
+### File: ./eslint.config.js
+```js
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import tseslint from 'typescript-eslint'
+import { defineConfig, globalIgnores } from 'eslint/config'
+
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      js.configs.recommended,
+      tseslint.configs.recommended,
+      reactHooks.configs.flat.recommended,
+      reactRefresh.configs.vite,
+    ],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: globals.browser,
+    },
+  },
+])
+
+```
+
+---
+### File: ./vite.config.ts
+```ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react-swc'
+import tailwindcss from '@tailwindcss/vite'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  base: '/map-editor/',
+})
+
+```
+
+---
+### File: ./src/App.tsx
 ```tsx
 import "./App.css";
 import { MapEditor } from "./editor/MapEditor";
@@ -44,7 +349,7 @@ export default App;
 ```
 
 ---
-### File: src/main.tsx
+### File: ./src/main.tsx
 ```tsx
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -60,20 +365,20 @@ createRoot(document.getElementById('root')!).render(
 ```
 
 ---
-### File: src/App.css
+### File: ./src/App.css
 ```css
 @import "tailwindcss";
 
 ```
 
 ---
-### File: src/index.css
+### File: ./src/index.css
 ```css
 
 ```
 
 ---
-### File: src/types.ts
+### File: ./src/types.ts
 ```ts
 export type TileData = { tileId: number; flipX: boolean };
 export type Layer = { id: string; name: string; visible: boolean; opacity: number; data: Record<string, TileData> };
@@ -89,7 +394,7 @@ export type CustomBrush = {
 ```
 
 ---
-### File: src/components/editor/Palette.tsx
+### File: ./src/components/editor/Palette.tsx
 ```tsx
 import React, { useRef, useEffect, type MouseEvent } from "react";
 import { type SelectionRect } from "../../types";
@@ -262,7 +567,7 @@ export function Palette({ image, selection, setSelection, zoom, setZoom, isFlipp
 ```
 
 ---
-### File: src/components/editor/Toolbar.tsx
+### File: ./src/components/editor/Toolbar.tsx
 ```tsx
 import React from "react";
 import { type Tool } from "../../types";
@@ -374,8 +679,9 @@ export function Toolbar({
 ```
 
 ---
-### File: src/components/editor/LayerPanel.tsx
+### File: ./src/components/editor/LayerPanel.tsx
 ```tsx
+import { useState, useRef, useEffect } from "react";
 import { type Layer } from "../../types";
 
 type LayerPanelProps = {
@@ -385,6 +691,9 @@ type LayerPanelProps = {
     onToggleVisibility: (index: number) => void;
     onOpacityChange: (index: number, opacity: number) => void;
     onMoveLayer: (index: number, direction: 'up' | 'down') => void;
+    onAddLayer: () => void;
+    onRemoveLayer: (index: number) => void;
+    onRenameLayer: (index: number, newName: string) => void;
 };
 
 export function LayerPanel({
@@ -393,11 +702,56 @@ export function LayerPanel({
     setActiveLayerIndex,
     onToggleVisibility,
     onOpacityChange,
-    onMoveLayer
+    onMoveLayer,
+    onAddLayer,
+    onRemoveLayer,
+    onRenameLayer
 }: LayerPanelProps) {
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+    const [editName, setEditName] = useState("");
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (editingIndex !== null && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [editingIndex]);
+
+    function startEditing(index: number, currentName: string) {
+        setEditingIndex(index);
+        setEditName(currentName);
+    }
+
+    function saveEditing() {
+        if (editingIndex !== null) {
+            if (editName.trim()) {
+                onRenameLayer(editingIndex, editName.trim());
+            }
+            setEditingIndex(null);
+            setEditName("");
+        }
+    }
+
+    function handleKeyDown(e: React.KeyboardEvent) {
+        if (e.key === "Enter") {
+            saveEditing();
+        } else if (e.key === "Escape") {
+            setEditingIndex(null);
+        }
+    }
+
     return (
-        <div className="h-40 border-t border-gray-300 bg-gray-50 p-2 flex flex-col">
-            <h4 className="text-sm font-bold mb-2">Layers</h4>
+        <div className="h-48 border-t border-gray-300 bg-gray-50 p-2 flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-bold">Layers</h4>
+                <button
+                    onClick={onAddLayer}
+                    className="px-2 py-0.5 bg-blue-500 text-white rounded text-xs hover:bg-blue-600"
+                    title="Add New Layer"
+                >
+                    + Add
+                </button>
+            </div>
             <div className="flex-1 overflow-auto space-y-1">
                 {layers.map((layer, index) => (
                     <div
@@ -406,9 +760,9 @@ export function LayerPanel({
                         onClick={() => setActiveLayerIndex(index)}
                     >
                         <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center">
+                            <div className="flex items-center flex-1 min-w-0">
                                 <button
-                                    className="mr-2 text-gray-500 hover:text-black"
+                                    className="mr-2 text-gray-500 hover:text-black flex-none"
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         onToggleVisibility(index);
@@ -416,9 +770,43 @@ export function LayerPanel({
                                 >
                                     {layer.visible ? "👁️" : "🚫"}
                                 </button>
-                                <span className={`text-sm font-medium select-none ${!layer.visible && "text-gray-400"}`}>{layer.name}</span>
+
+                                {editingIndex === index ? (
+                                    <input
+                                        ref={inputRef}
+                                        type="text"
+                                        value={editName}
+                                        onChange={(e) => setEditName(e.target.value)}
+                                        onBlur={saveEditing}
+                                        onKeyDown={handleKeyDown}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-sm font-medium border border-blue-500 rounded px-1 w-full"
+                                    />
+                                ) : (
+                                    <span
+                                        className={`text-sm font-medium select-none truncate ${!layer.visible && "text-gray-400"}`}
+                                        onDoubleClick={(e) => {
+                                            e.stopPropagation();
+                                            startEditing(index, layer.name);
+                                        }}
+                                        title="Double click to rename"
+                                    >{layer.name}</span>
+                                )}
                             </div>
-                            <div className="flex items-center space-x-1">
+                            <div className="flex items-center space-x-1 ml-2">
+                                <button
+                                    className="px-1 text-xs bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-30"
+                                    disabled={layers.length <= 1}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (confirm(`Delete layer "${layer.name}"?`)) {
+                                            onRemoveLayer(index);
+                                        }
+                                    }}
+                                    title="Delete Layer"
+                                >
+                                    🗑️
+                                </button>
                                 <button
                                     className="px-1 text-xs bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-30"
                                     disabled={index === layers.length - 1}
@@ -467,7 +855,7 @@ export function LayerPanel({
 ```
 
 ---
-### File: src/components/editor/MapCanvas.tsx
+### File: ./src/components/editor/MapCanvas.tsx
 ```tsx
 import { useRef, useEffect, type MouseEvent } from "react";
 import { type Layer, type SelectionRect, type Tool, type CustomBrush } from "../../types";
@@ -780,7 +1168,7 @@ export function MapCanvas({
 ```
 
 ---
-### File: src/components/editor/RecentTiles.tsx
+### File: ./src/components/editor/RecentTiles.tsx
 ```tsx
 import { useRef, useEffect } from "react";
 import { type SelectionRect } from "../../types";
@@ -882,7 +1270,7 @@ function TilePreview({
 ```
 
 ---
-### File: src/constants.ts
+### File: ./src/constants.ts
 ```ts
 export const TILE_WIDTH = 32;
 export const TILE_HEIGHT = 32;
@@ -890,7 +1278,7 @@ export const TILE_HEIGHT = 32;
 ```
 
 ---
-### File: src/hooks/useMapState.ts
+### File: ./src/hooks/useMapState.ts
 ```ts
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useImmer } from "use-immer";
@@ -1027,6 +1415,54 @@ export function useMapState() {
     // Or just let it be. Usually resizing doesn't break tile data directly but 
     // for simplicity we won't clear history.
 
+    const addLayer = useCallback((baseName: string) => {
+        saveCheckpoint();
+        setLayers(draft => {
+            // Uniqueness check
+            let name = baseName;
+            let counter = 1;
+            while (draft.some(l => l.name === name)) {
+                name = `${baseName} (${counter})`;
+                counter++;
+            }
+
+            const newId = crypto.randomUUID();
+            draft.push({
+                id: newId,
+                name: name,
+                visible: true,
+                opacity: 1,
+                data: {}
+            });
+        });
+    }, [setLayers, saveCheckpoint]);
+
+    const removeLayer = useCallback((index: number) => {
+        // Prevent deleting last layer
+        if (layers.length <= 1) return;
+        saveCheckpoint();
+        setLayers(draft => {
+            draft.splice(index, 1);
+        });
+    }, [layers.length, setLayers, saveCheckpoint]);
+
+    const renameLayer = useCallback((index: number, newName: string) => {
+        setLayers(draft => {
+            // Basic uniqueness check: if exists, don't rename (or could suffix).
+            // For UI simplicity, we'll strict reject or auto-suffix.
+            // Let's auto-suffix to be safe and easy.
+            let name = newName;
+            let counter = 1;
+            // Check against OTHER layers
+            while (draft.some((l, i) => i !== index && l.name === name)) {
+                name = `${newName} (${counter})`;
+                counter++;
+            }
+            draft[index].name = name;
+        });
+    }, [setLayers]);
+
+
     return {
         layers,
         setLayers,
@@ -1038,13 +1474,17 @@ export function useMapState() {
         saveCheckpoint,
         performUndo,
         performRedo,
+
+        addLayer,
+        removeLayer,
+        renameLayer
     };
 }
 
 ```
 
 ---
-### File: src/editor/MapEditor.tsx
+### File: ./src/editor/MapEditor.tsx
 ```tsx
 import { useRef, useState, useEffect, type MouseEvent } from "react";
 import spritesheet from "../assets/project.png";
@@ -1068,7 +1508,10 @@ export function MapEditor() {
 
         performRedo,
         recentStamps,
-        addRecentStamp
+        addRecentStamp,
+        addLayer,
+        removeLayer,
+        renameLayer
     } = useMapState();
 
     const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -1784,6 +2227,21 @@ export function MapEditor() {
                                 }
                             });
                         }}
+                        onAddLayer={() => {
+                            const name = prompt("Enter layer name:", "New Layer");
+                            if (name !== null) {
+                                addLayer(name || "Layer");
+                                setActiveLayerIndex(layers.length);
+                            }
+                        }}
+                        onRemoveLayer={(index) => {
+                            removeLayer(index);
+                            // If we deleted the active layer, or a layer below it, adjust
+                            if (activeLayerIndex >= index) {
+                                setActiveLayerIndex(Math.max(0, activeLayerIndex - 1));
+                            }
+                        }}
+                        onRenameLayer={renameLayer}
                     />
                 </div>
             </div>

@@ -37,7 +37,7 @@ export function generateProceduralLevel(
     const terrainDecoGroups = Object.values(allGroups).filter(g => g.role === "terrain-decoration");
 
     // Default to first if none
-    const mainTerrain = terrainGroups.length > 0 ? terrainGroups[0] : Object.values(allGroups)[0];
+
 
     // --- Pass 1: Terrain Walker (Multi-Pass) ---
     // We run a walker for EACH selected terrain group to allow layering (e.g. Sky Islands + Ground)
